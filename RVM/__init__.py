@@ -1,1 +1,2 @@
-from .input import Input
+from .source import *
+from .pipeline import Pipeline
