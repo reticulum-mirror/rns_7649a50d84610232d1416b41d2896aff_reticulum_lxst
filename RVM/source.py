@@ -2,6 +2,7 @@ import RNS
 import math
 import threading
 from collections import deque
+from .sink import Sink
 RNS.loglevel = RNS.LOG_DEBUG
 
 class LinuxBackend():
@@ -31,19 +32,44 @@ Backend = get_backend()
 class Source():
     pass
 
+class Loopback(Source, Sink):
+    MAX_FRAMES = 128
+
+    def __init__(self, target_frame_ms=70, codec=None, sink=None):
+        self.frame_deque     = deque(maxlen=self.MAX_FRAMES)
+        self.should_run      = False
+        self.loopback_thread = None
+        self.loopback_lock   = threading.Lock()
+        self.codec           = codec
+        self.sink            = sink
+        
+
+    def start(self):
+        if not self.should_run:
+            RNS.log(f"{self} starting", RNS.LOG_DEBUG)
+            self.should_run = True
+
+    def stop(self):
+        self.should_run = False
+
+    def handle_frame(self, frame):
+        with self.loopback_lock:
+            if self.codec and self.sink:
+                self.sink.handle_frame(self.codec.decode(frame))
+
 class LineSource(Source):
     MAX_FRAMES = 128
 
-    def __init__(self, target_frame_ms=70, encoder=None, sink=None):
+    def __init__(self, target_frame_ms=70, codec=None, sink=None):
         self.frame_deque    = deque(maxlen=self.MAX_FRAMES)
         self.should_run     = False
         self.ingest_thread  = None
         self.recording_lock = threading.Lock()
-        self.encoder        = encoder
+        self.codec          = codec
         self.sink           = sink
         
-        if self.encoder != None and self.encoder.preferred_samplerate:
-            self.preferred_samplerate = self.encoder.preferred_samplerate
+        if self.codec != None and self.codec.preferred_samplerate:
+            self.preferred_samplerate = self.codec.preferred_samplerate
         else:
             self.preferred_samplerate = Backend.SAMPLERATE
 
@@ -66,7 +92,7 @@ class LineSource(Source):
             with self.backend.get_recorder(samples_per_frame=self.samples_per_frame) as recorder:
                 while self.should_run:
                     frame_samples = recorder.record(numframes=self.samples_per_frame)
-                    if self.encoder:
-                        frame = self.encoder.encode(frame_samples)
+                    if self.codec:
+                        frame = self.codec.encode(frame_samples)
                         if self.sink:
                             self.sink.handle_frame(frame)
