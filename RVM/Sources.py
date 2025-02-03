@@ -3,6 +3,7 @@ import math
 import threading
 from collections import deque
 from .Sinks import Sink
+from .Codecs import Codec, CodecError
 
 RNS.loglevel = RNS.LOG_DEBUG
 
@@ -42,8 +43,8 @@ class Loopback(Source, Sink):
         self.loopback_thread = None
         self.loopback_lock   = threading.Lock()
         self.codec           = codec
-        self.sink            = sink
-        
+        self._sink           = sink
+        self._source         = None
 
     def start(self):
         if not self.should_run:
@@ -58,24 +59,53 @@ class Loopback(Source, Sink):
             if self.codec and self.sink:
                 self.sink.handle_frame(self.codec.decode(frame))
 
+    @property
+    def source(self):
+        return self._source
+
+    @source.setter
+    def source(self, source):
+        self._source = source
+
 class LineSource(Source):
     MAX_FRAMES = 128
 
     def __init__(self, target_frame_ms=70, codec=None, sink=None):
-        self.frame_deque    = deque(maxlen=self.MAX_FRAMES)
-        self.should_run     = False
-        self.ingest_thread  = None
-        self.recording_lock = threading.Lock()
-        self.codec          = codec
-        self.sink           = sink
-        
-        if self.codec != None and self.codec.preferred_samplerate:
-            self.preferred_samplerate = self.codec.preferred_samplerate
-        else:
-            self.preferred_samplerate = Backend.SAMPLERATE
+        self.frame_deque     = deque(maxlen=self.MAX_FRAMES)
+        self.target_frame_ms = target_frame_ms
+        self.should_run      = False
+        self.ingest_thread   = None
+        self.recording_lock  = threading.Lock()
+        self._codec          = None
+        self.codec           = codec
+        self.sink            = sink
 
-        self.backend           = Backend(samplerate=self.preferred_samplerate)
-        self.samples_per_frame = math.ceil((target_frame_ms/1000)*self.backend.samplerate)
+    @property
+    def codec(self):
+        return self._codec
+
+    @codec.setter
+    def codec(self, codec):
+        if codec == None:
+            self._codec = None
+        elif not issubclass(type(codec), Codec):
+            raise CodecError(f"Invalid codec specified for {self}")
+        else:
+            self._codec = codec
+
+            if self.codec.preferred_samplerate:
+                self.preferred_samplerate = self.codec.preferred_samplerate
+            else:
+                self.preferred_samplerate = Backend.SAMPLERATE
+
+            if self.codec.frame_quanta_ms:
+                if self.target_frame_ms%self.codec.frame_quanta_ms != 0:
+                    self.target_frame_ms = math.ceil(self.target_frame_ms/self.codec.frame_quanta_ms)*self.codec.frame_quanta_ms
+                    RNS.log(f"{self} target frame time quantized to {self.target_frame_ms}ms due to codec frame quanta", RNS.LOG_DEBUG)
+
+            self.backend           = Backend(samplerate=self.preferred_samplerate)
+            self.samplerate        = self.backend.samplerate
+            self.samples_per_frame = math.ceil((self.target_frame_ms/1000)*self.samplerate)
 
     def start(self):
         if not self.should_run:

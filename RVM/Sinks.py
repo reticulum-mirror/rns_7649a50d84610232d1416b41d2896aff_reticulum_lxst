@@ -18,7 +18,7 @@ class LinuxBackend():
         self.recorder.flush()
 
     def get_player(self, samples_per_frame=None):
-        return self.device.player(samplerate=self.SAMPLERATE, blocksize=samples_per_frame)
+        return self.device.player(samplerate=self.samplerate, blocksize=samples_per_frame)
 
 def get_backend():
     if RNS.vendor.platformutils.is_linux():
@@ -40,7 +40,7 @@ class LocalSink(Sink):
 
 class LineSink(LocalSink):
     MAX_FRAMES    = 128
-    AUTOSTART_MIN = 2
+    AUTOSTART_MIN = 1
     FRAME_TIMEOUT = 8
 
     def __init__(self, autodigest=True):
@@ -48,6 +48,7 @@ class LineSink(LocalSink):
         self.should_run           = False
         self.digest_thread        = None
         self.digest_lock          = threading.Lock()
+        self.insert_lock          = threading.Lock()
         self.frame_deque          = deque(maxlen=self.MAX_FRAMES)
         self.underrun_at          = None
         self.frame_timeout        = self.FRAME_TIMEOUT
@@ -56,12 +57,14 @@ class LineSink(LocalSink):
         
         self.preferred_samplerate = Backend.SAMPLERATE
         self.backend              = Backend(samplerate=self.preferred_samplerate)
+        self.samplerate           = self.backend.samplerate
 
         self.samples_per_frame    = None
         self.frame_time           = None
 
     def handle_frame(self, frame):
-        self.frame_deque.append(frame)
+        with self.insert_lock:
+            self.frame_deque.append(frame)
         if self.samples_per_frame == None:
             self.samples_per_frame = len(frame)
             self.frame_time = self.samples_per_frame*(1/self.backend.samplerate)
@@ -82,21 +85,26 @@ class LineSink(LocalSink):
 
     def __digest_job(self):
         with self.digest_lock:
-            with self.backend.get_player(samples_per_frame=self.samples_per_frame) as player:
+            # with self.backend.get_player(samples_per_frame=self.samples_per_frame) as player:
+            with self.backend.get_player() as player:
                 while self.should_run:
                     frames_ready = len(self.frame_deque)
                     if frames_ready:
                         self.underrun_at = None
-                        player.play(self.frame_deque.pop())
-                        if len(self.frame_deque) > 2:
+                        with self.insert_lock:
+                            frame = self.frame_deque.pop()
+                        player.play(frame)
+                        if len(self.frame_deque) > self.autostart_min:
                             RNS.log(f"Buffer lag on {self}, dropping one frame", RNS.LOG_DEBUG)
                             self.frame_deque.pop()
                     else:
-                        time.sleep(self.frame_time*1.1)
                         if self.underrun_at == None:
-                            RNS.log(f"Buffer underrun on {self}", RNS.LOG_DEBUG)
+                            # TODO: Remove debug
+                            # RNS.log(f"Buffer underrun on {self}", RNS.LOG_DEBUG)
                             self.underrun_at = time.time()
                         else:
                             if time.time() > self.underrun_at+(self.frame_time*self.frame_timeout):
                                 RNS.log(f"No frames available on {self}, stopping playback", RNS.LOG_DEBUG)
                                 self.should_run = False
+                            else:
+                                time.sleep(self.frame_time*0.1)
