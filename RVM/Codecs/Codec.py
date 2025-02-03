@@ -3,6 +3,8 @@ from pydub import AudioSegment
 class Codec():
     preferred_samplerate = None
     frame_quanta_ms      = None
+    frame_max_ms         = None
+    valid_frame_ms       = None
     source               = None
     sink                 = None
 

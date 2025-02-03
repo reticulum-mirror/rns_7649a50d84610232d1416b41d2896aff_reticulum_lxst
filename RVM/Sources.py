@@ -102,6 +102,16 @@ class LineSource(Source):
                 if self.target_frame_ms%self.codec.frame_quanta_ms != 0:
                     self.target_frame_ms = math.ceil(self.target_frame_ms/self.codec.frame_quanta_ms)*self.codec.frame_quanta_ms
                     RNS.log(f"{self} target frame time quantized to {self.target_frame_ms}ms due to codec frame quanta", RNS.LOG_DEBUG)
+            
+            if self.codec.frame_max_ms:
+                if self.target_frame_ms > self.codec.frame_max_ms:
+                    self.target_frame_ms = self.codec.frame_max_ms
+                    RNS.log(f"{self} target frame time clamped to {self.target_frame_ms}ms due to codec frame limit", RNS.LOG_DEBUG)
+
+            if self.codec.valid_frame_ms:
+                if not self.target_frame_ms in self.codec.valid_frame_ms:
+                    self.target_frame_ms = min(self.codec.valid_frame_ms, key=lambda t:abs(t-self.target_frame_ms))
+                    RNS.log(f"{self} target frame time clamped to closest valid value of {self.target_frame_ms}ms ", RNS.LOG_DEBUG)
 
             self.backend           = Backend(samplerate=self.preferred_samplerate)
             self.samplerate        = self.backend.samplerate
