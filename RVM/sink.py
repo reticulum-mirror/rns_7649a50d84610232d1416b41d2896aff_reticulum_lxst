@@ -45,15 +45,15 @@ class LineSink(LocalSink):
     FRAME_TIMEOUT = 8
 
     def __init__(self, autodigest=True):
-        self.frame_deque    = deque(maxlen=self.MAX_FRAMES)
-        self.should_run     = False
-        self.digest_thread  = None
-        self.digest_lock    = threading.Lock()
-        self.frame_deque    = deque(maxlen=self.MAX_FRAMES)
-        self.underrun_at    = None
-        self.frame_timeout  = self.FRAME_TIMEOUT
-        self.autodigest     = autodigest
-        self.autostart_min  = self.AUTOSTART_MIN
+        self.frame_deque          = deque(maxlen=self.MAX_FRAMES)
+        self.should_run           = False
+        self.digest_thread        = None
+        self.digest_lock          = threading.Lock()
+        self.frame_deque          = deque(maxlen=self.MAX_FRAMES)
+        self.underrun_at          = None
+        self.frame_timeout        = self.FRAME_TIMEOUT
+        self.autodigest           = autodigest
+        self.autostart_min        = self.AUTOSTART_MIN
         
         self.preferred_samplerate = Backend.SAMPLERATE
         self.backend              = Backend(samplerate=self.preferred_samplerate)
