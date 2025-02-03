@@ -39,7 +39,6 @@ class Codec2(Codec):
                     0x06: CODEC2_3200}
 
     def __init__(self, mode=CODEC2_2400):
-        # self.preferred_samplerate = self.INPUT_RATE
         self.frame_quanta_ms = self.FRAME_QUANTA_MS
         self.channels = 1
         self.bitdepth = 16
