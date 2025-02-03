@@ -18,6 +18,8 @@ class Pipeline():
 
         if isinstance(sink, Loopback):
             sink.samplerate = source.samplerate
+        if isinstance(source, Loopback):
+            source._sink = sink
 
     @property
     def codec(self):

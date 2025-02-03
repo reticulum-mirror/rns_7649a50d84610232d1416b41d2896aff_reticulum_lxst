@@ -32,6 +32,10 @@ class Sink():
     def handle_frame(self, frame):
         pass
 
+    def can_receive(self):
+        RNS.log("Always")
+        return True
+
 class RemoteSink(Sink):
     pass
 
@@ -39,7 +43,7 @@ class LocalSink(Sink):
     pass
 
 class LineSink(LocalSink):
-    MAX_FRAMES    = 128
+    MAX_FRAMES    = 16
     AUTOSTART_MIN = 1
     FRAME_TIMEOUT = 8
 
@@ -54,6 +58,7 @@ class LineSink(LocalSink):
         self.frame_timeout        = self.FRAME_TIMEOUT
         self.autodigest           = autodigest
         self.autostart_min        = self.AUTOSTART_MIN
+        self.buffer_max_height    = self.MAX_FRAMES-3
         
         self.preferred_samplerate = Backend.SAMPLERATE
         self.backend              = Backend(samplerate=self.preferred_samplerate)
@@ -62,17 +67,25 @@ class LineSink(LocalSink):
         self.samples_per_frame    = None
         self.frame_time           = None
 
+    def can_receive(self):
+        with self.insert_lock:
+            if len(self.frame_deque) < self.buffer_max_height:
+                return True
+            else:
+                return False
+
     def handle_frame(self, frame):
         with self.insert_lock:
             self.frame_deque.append(frame)
-        if self.samples_per_frame == None:
-            self.samples_per_frame = len(frame)
-            self.frame_time = self.samples_per_frame*(1/self.backend.samplerate)
-            RNS.log(f"{self} starting at {self.samples_per_frame} samples per frame", RNS.LOG_DEBUG)
+        
+            if self.samples_per_frame == None:
+                self.samples_per_frame = len(frame)
+                self.frame_time = self.samples_per_frame*(1/self.backend.samplerate)
+                RNS.log(f"{self} starting at {self.samples_per_frame} samples per frame", RNS.LOG_DEBUG)
 
-        if self.autodigest and not self.should_run:
-            if len(self.frame_deque) >= self.autostart_min:
-                self.start()
+            if self.autodigest and not self.should_run:
+                if len(self.frame_deque) >= self.autostart_min:
+                    self.start()
 
     def start(self):
         if not self.should_run:
@@ -92,11 +105,13 @@ class LineSink(LocalSink):
                     if frames_ready:
                         self.underrun_at = None
                         with self.insert_lock:
-                            frame = self.frame_deque.pop()
+                            frame = self.frame_deque.popleft()
                         player.play(frame)
-                        if len(self.frame_deque) > self.autostart_min:
-                            RNS.log(f"Buffer lag on {self}, dropping one frame", RNS.LOG_DEBUG)
-                            self.frame_deque.pop()
+
+                        if len(self.frame_deque) > self.buffer_max_height:
+                            RNS.log(f"Buffer lag on {self} (height {len(self.frame_deque)}), dropping one frame", RNS.LOG_DEBUG)
+                            self.frame_deque.popleft()
+                    
                     else:
                         if self.underrun_at == None:
                             # TODO: Remove debug
