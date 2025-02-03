@@ -2,7 +2,7 @@ import RNS
 import math
 import threading
 from collections import deque
-from .Sinks import Sink
+from .Sinks import LocalSink
 from .Codecs import Codec, CodecError
 
 RNS.loglevel = RNS.LOG_DEBUG
@@ -34,7 +34,13 @@ Backend = get_backend()
 class Source():
     pass
 
-class Loopback(Source, Sink):
+class LocalSource(Source):
+    pass
+
+class RemoteSource(Source):
+    pass
+
+class Loopback(LocalSource, LocalSink):
     MAX_FRAMES = 128
 
     def __init__(self, target_frame_ms=70, codec=None, sink=None):
@@ -67,7 +73,7 @@ class Loopback(Source, Sink):
     def source(self, source):
         self._source = source
 
-class LineSource(Source):
+class LineSource(LocalSource):
     MAX_FRAMES = 128
 
     def __init__(self, target_frame_ms=70, codec=None, sink=None):
@@ -137,3 +143,6 @@ class LineSource(Source):
                         frame = self.codec.encode(frame_samples)
                         if self.sink:
                             self.sink.handle_frame(frame)
+
+class PacketSource(RemoteSource):
+    pass

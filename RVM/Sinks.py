@@ -108,3 +108,6 @@ class LineSink(LocalSink):
                                 self.should_run = False
                             else:
                                 time.sleep(self.frame_time*0.1)
+
+class PacketSink(RemoteSink):
+    pass
