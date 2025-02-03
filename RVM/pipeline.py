@@ -12,7 +12,7 @@ class Pipeline():
         if not issubclass(type(sink), Sink)    : raise PipelineError("Audio pipeline initialised with invalid sink")
         if not issubclass(type(codec), Codec)  : raise PipelineError("Audio pipeline initialised with invalid codec")
         self.source         = source
-        self.source.encoder = codec
+        self.source.codec   = codec
         self.source.sink    = sink
 
     @property
