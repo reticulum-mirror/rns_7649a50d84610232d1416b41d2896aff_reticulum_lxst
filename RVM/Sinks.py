@@ -3,7 +3,6 @@ import math
 import time
 import threading
 from collections import deque
-RNS.loglevel = RNS.LOG_DEBUG
 
 class LinuxBackend():
     SAMPLERATE = 48000

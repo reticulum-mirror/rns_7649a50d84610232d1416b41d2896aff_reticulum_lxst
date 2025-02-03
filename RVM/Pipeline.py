@@ -1,7 +1,6 @@
-from .common import nop
-from .source import *
-from .sink   import *
-from .codecs import *
+from .Sources import *
+from .Sinks   import *
+from .Codecs  import *
 
 class PipelineError(Exception):
     pass

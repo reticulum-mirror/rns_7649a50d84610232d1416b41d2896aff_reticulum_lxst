@@ -2,7 +2,8 @@ import RNS
 import math
 import threading
 from collections import deque
-from .sink import Sink
+from .Sinks import Sink
+
 RNS.loglevel = RNS.LOG_DEBUG
 
 class LinuxBackend():

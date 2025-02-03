@@ -1,5 +1,5 @@
 import numpy as np
-from .codec import Codec
+from .Codec import Codec
 
 class Raw(Codec):
     BITDEPTH_16  = 0x00
