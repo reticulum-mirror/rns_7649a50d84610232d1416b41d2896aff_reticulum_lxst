@@ -22,7 +22,7 @@ class Opus(Codec):
     PROFILE_AUDIO_HIGH   = 0x07
     PROFILE_AUDIO_MAX    = 0x08
 
-    def __init__(self, profile=PROFILE_AUDIO_MEDIUM):
+    def __init__(self, profile=PROFILE_VOICE_LOW):
         self.frame_quanta_ms = self.FRAME_QUANTA_MS
         self.frame_max_ms    = self.FRAME_MAX_MS
         self.valid_frame_ms  = self.VALID_FRAME_MS
