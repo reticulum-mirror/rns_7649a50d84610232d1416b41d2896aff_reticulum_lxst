@@ -11,10 +11,10 @@ class Codec():
 class CodecError(Exception):
     pass
 
-def resample_bytes(samples, bitdepth, channels, input_rate, output_rate, normalize=False):
+def resample_bytes(sample_bytes, bitdepth, channels, input_rate, output_rate, normalize=False):
     sample_width = bitdepth//8
     audio = AudioSegment(
-        samples,
+        sample_bytes,
         frame_rate=input_rate,
         sample_width=sample_width,
         channels=channels)

@@ -16,7 +16,9 @@ else:
     target_frame_ms = 80
 
 if len(sys.argv) >= 3 and sys.argv[2].lower() == "file":
-    selected_source = RVM.Sources.OpusFileSource("./docs/speech_stereo.opus", loop=True, target_frame_ms=target_frame_ms)
+    # selected_source = RVM.Sources.OpusFileSource("./docs/speech_stereo.opus", loop=True, target_frame_ms=target_frame_ms)
+    # selected_source = RVM.Sources.OpusFileSource("./docs/music_stereo.opus", loop=True, target_frame_ms=target_frame_ms)
+    selected_source = RVM.Sources.OpusFileSource("./docs/podcast.opus", loop=True, target_frame_ms=target_frame_ms)
 else:
     selected_source = RVM.Sources.LineSource(target_frame_ms=target_frame_ms)
 
