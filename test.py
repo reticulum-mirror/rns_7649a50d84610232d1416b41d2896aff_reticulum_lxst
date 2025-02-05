@@ -30,11 +30,11 @@ if selected_codec.lower() == "raw":
     input_pipeline  = RVM.Pipeline(source=selected_source, codec=raw, sink=loopback)
     output_pipeline = RVM.Pipeline(source=loopback, codec=raw, sink=line_sink)
 elif selected_codec.lower() == "codec2":
-    codec2          = RVM.Codecs.Codec2(mode=RVM.Codecs.Codec2.CODEC2_3200)
+    codec2          = RVM.Codecs.Codec2(mode=RVM.Codecs.Codec2.CODEC2_1600)
     input_pipeline  = RVM.Pipeline(source=selected_source, codec=codec2, sink=loopback)
     output_pipeline = RVM.Pipeline(source=loopback, codec=codec2, sink=line_sink)
 elif selected_codec.lower() == "opus":
-    opus            = RVM.Codecs.Opus()
+    opus            = RVM.Codecs.Opus(profile=RVM.Codecs.Opus.PROFILE_VOICE_MEDIUM)
     input_pipeline  = RVM.Pipeline(source=selected_source, codec=opus, sink=loopback)
     output_pipeline = RVM.Pipeline(source=loopback, codec=opus, sink=line_sink)
 else:

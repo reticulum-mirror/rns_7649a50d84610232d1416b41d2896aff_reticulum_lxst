@@ -94,6 +94,8 @@ class Opus(Codec):
             self.bitrate_ceiling = 8000
         elif self.profile == self.PROFILE_VOICE_HIGH:
             self.bitrate_ceiling = 16000
+        elif self.profile == self.PROFILE_VOICE_MAX:
+            self.bitrate_ceiling = 32000
         elif self.profile == self.PROFILE_AUDIO_MIN:
             self.bitrate_ceiling = 8000
         elif self.profile == self.PROFILE_AUDIO_LOW:
