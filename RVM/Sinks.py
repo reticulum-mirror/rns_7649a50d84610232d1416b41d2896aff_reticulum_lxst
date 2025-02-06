@@ -107,8 +107,6 @@ class LineSink(LocalSink):
                         self.max_latency    = self.buffer_max_height*self.frame_time
                         self.underrun_at = None
 
-                        RNS.log(f"Sink latency: {RNS.prettyshorttime(self.output_latency)} ({RNS.prettyshorttime(self.max_latency)} max)")
-
                         with self.insert_lock: frame = self.frame_deque.popleft()
                         player.play(frame)
 

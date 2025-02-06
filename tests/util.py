@@ -13,7 +13,7 @@ else:
 if len(sys.argv) >= 4:
     target_frame_ms = int(sys.argv[3])
 else:
-    target_frame_ms = 80
+    target_frame_ms = 40
 
 if len(sys.argv) >= 3 and sys.argv[2].lower() == "file":
     selected_source = RVM.Sources.OpusFileSource("./docs/speech_stereo.opus", loop=True, target_frame_ms=target_frame_ms)

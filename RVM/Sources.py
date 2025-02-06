@@ -179,7 +179,7 @@ class OpusFileSource(LocalSource):
             self.sample_count = self.samples.shape[0]
             self.length_ms = (self.sample_count/self.samplerate)*1000
             RNS.log(f"{self} loaded {RNS.prettytime(self.length_ms/1000)} of audio from {file_path}", RNS.LOG_DEBUG)
-            RNS.log(f"Samplerate {RNS.prettyfrequency(self.samplerate)}, {self.channels} channels, {self.sample_count} samples in total")
+            RNS.log(f"{self} samplerate is {RNS.prettyfrequency(self.samplerate)}, {self.channels} channels, {self.sample_count} samples in total", RNS.LOG_DEBUG)
         else:
             raise OSError(f"{self} file {file_path} not found")
 
@@ -216,7 +216,7 @@ class OpusFileSource(LocalSource):
 
             self.samples_per_frame = math.ceil((self.target_frame_ms/1000)*self.samplerate)
             self.frame_time = self.samples_per_frame/self.samplerate
-            RNS.log(f"{self} frame time is {RNS.prettyshorttime(self.frame_time)}")
+            RNS.log(f"{self} frame time is {RNS.prettyshorttime(self.frame_time)}", RNS.LOG_DEBUG)
 
     def start(self):
         if not self.should_run:
