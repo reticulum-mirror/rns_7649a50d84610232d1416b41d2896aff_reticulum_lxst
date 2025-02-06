@@ -34,7 +34,7 @@ elif selected_codec.lower() == "codec2":
     input_pipeline  = RVM.Pipeline(source=selected_source, codec=codec2, sink=loopback)
     output_pipeline = RVM.Pipeline(source=loopback, codec=codec2, sink=line_sink)
 elif selected_codec.lower() == "opus":
-    opus            = RVM.Codecs.Opus(profile=RVM.Codecs.Opus.PROFILE_VOICE_MEDIUM)
+    opus            = RVM.Codecs.Opus(profile=RVM.Codecs.Opus.PROFILE_VOICE_LOW)
     input_pipeline  = RVM.Pipeline(source=selected_source, codec=opus, sink=loopback)
     output_pipeline = RVM.Pipeline(source=loopback, codec=opus, sink=line_sink)
 else:

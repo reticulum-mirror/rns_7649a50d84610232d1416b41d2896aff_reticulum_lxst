@@ -29,11 +29,10 @@ def get_backend():
 Backend = get_backend()
 
 class Sink():
-    def handle_frame(self, frame):
+    def handle_frame(self, frame, source):
         pass
 
-    def can_receive(self):
-        RNS.log("Always")
+    def can_receive(self, from_source=None):
         return True
 
 class RemoteSink(Sink):
@@ -43,7 +42,7 @@ class LocalSink(Sink):
     pass
 
 class LineSink(LocalSink):
-    MAX_FRAMES    = 16
+    MAX_FRAMES    = 6
     AUTOSTART_MIN = 1
     FRAME_TIMEOUT = 8
 
@@ -66,15 +65,17 @@ class LineSink(LocalSink):
 
         self.samples_per_frame    = None
         self.frame_time           = None
+        self.output_latency       = 0
+        self.max_latency          = 0
 
-    def can_receive(self):
+    def can_receive(self, from_source=None):
         with self.insert_lock:
             if len(self.frame_deque) < self.buffer_max_height:
                 return True
             else:
                 return False
 
-    def handle_frame(self, frame):
+    def handle_frame(self, frame, source=None):
         with self.insert_lock:
             self.frame_deque.append(frame)
         
@@ -98,14 +99,17 @@ class LineSink(LocalSink):
 
     def __digest_job(self):
         with self.digest_lock:
-            # with self.backend.get_player(samples_per_frame=self.samples_per_frame) as player:
-            with self.backend.get_player() as player:
+            with self.backend.get_player(samples_per_frame=self.samples_per_frame) as player:
                 while self.should_run:
                     frames_ready = len(self.frame_deque)
                     if frames_ready:
+                        self.output_latency = len(self.frame_deque)*self.frame_time
+                        self.max_latency    = self.buffer_max_height*self.frame_time
                         self.underrun_at = None
-                        with self.insert_lock:
-                            frame = self.frame_deque.popleft()
+
+                        RNS.log(f"Sink latency: {RNS.prettyshorttime(self.output_latency)} ({RNS.prettyshorttime(self.max_latency)} max)")
+
+                        with self.insert_lock: frame = self.frame_deque.popleft()
                         player.play(frame)
 
                         if len(self.frame_deque) > self.buffer_max_height:

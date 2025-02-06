@@ -64,16 +64,16 @@ class Loopback(LocalSource, LocalSink):
     def stop(self):
         self.should_run = False
 
-    def can_receive(self):
+    def can_receive(self, from_source=None):
         if self._sink:
-            return self._sink.can_receive()
+            return self._sink.can_receive(from_source)
         else:
             return True
 
-    def handle_frame(self, frame):
+    def handle_frame(self, frame, source):
         with self.loopback_lock:
             if self.codec and self.sink:
-                self.sink.handle_frame(self.codec.decode(frame))
+                self.sink.handle_frame(self.codec.decode(frame), self)
 
     @property
     def source(self):
@@ -85,7 +85,7 @@ class Loopback(LocalSource, LocalSink):
 
 class LineSource(LocalSource):
     MAX_FRAMES       = 128
-    DEFAULT_FRAME_MS = 70
+    DEFAULT_FRAME_MS = 80
 
     def __init__(self, target_frame_ms=DEFAULT_FRAME_MS, codec=None, sink=None):
         self.frame_deque     = deque(maxlen=self.MAX_FRAMES)
@@ -152,8 +152,8 @@ class LineSource(LocalSource):
                     frame_samples = recorder.record(numframes=self.samples_per_frame)
                     if self.codec:
                         frame = self.codec.encode(frame_samples)
-                        if self.sink:
-                            self.sink.handle_frame(frame)
+                        if self.sink and self.sink.can_receive(from_source=self):
+                            self.sink.handle_frame(frame, self)
 
 class OpusFileSource(LocalSource):
     MAX_FRAMES       = 128
@@ -167,8 +167,6 @@ class OpusFileSource(LocalSource):
         self.should_run      = False
         self.ingest_thread   = None
         self._codec          = None
-        self.codec           = codec
-        self.sink            = sink
 
         if file_path == None:
             raise TypeError(f"{self} initialised with invalid file path: {file_path}")
@@ -184,6 +182,9 @@ class OpusFileSource(LocalSource):
             RNS.log(f"Samplerate {RNS.prettyfrequency(self.samplerate)}, {self.channels} channels, {self.sample_count} samples in total")
         else:
             raise OSError(f"{self} file {file_path} not found")
+
+        self.codec           = codec
+        self.sink            = sink
 
     @property
     def codec(self):
@@ -231,7 +232,7 @@ class OpusFileSource(LocalSource):
         with self.read_lock:
             fi = 0; spf = self.samples_per_frame; sc = self.sample_count
             while self.should_run:
-                if self.sink and self.sink.can_receive():
+                if self.sink and self.sink.can_receive(from_source=self):
                     fi += 1
                     fs = (fi-1)*spf; fe = min(fi*spf, sc)
                     frame_samples = self.samples[fs:fe, :]
@@ -245,7 +246,7 @@ class OpusFileSource(LocalSource):
                     else:
                         if self.codec:
                             frame = self.codec.encode(frame_samples)
-                            self.sink.handle_frame(frame)
+                            self.sink.handle_frame(frame, self)
                 else:
                     time.sleep(self.frame_time*0.1)
 
