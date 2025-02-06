@@ -22,6 +22,7 @@ class Mixer(LocalSource, LocalSink):
         self.mixer_lock       = threading.Lock()
         self.insert_lock      = threading.Lock()
         self.bitdepth         = 32
+        self.channels         = None
         self.samplerate       = None
         self._sink            = None
         self._source          = None
@@ -53,6 +54,10 @@ class Mixer(LocalSource, LocalSink):
         with self.insert_lock:
             if not source in self.incoming_frames:
                 self.incoming_frames[source]  = deque(maxlen=self.MAX_FRAMES)
+                
+                if not self.channels:
+                    self.channels = source.channels
+
                 if not self.samplerate:
                     self.samplerate = source.samplerate
                     self.samples_per_frame = math.ceil((self.target_frame_ms/1000)*self.samplerate)

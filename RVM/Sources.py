@@ -19,6 +19,8 @@ class LinuxBackend():
         self.soundcard  = soundcard
         self.device     = soundcard.default_microphone()
         self.samplerate = samplerate
+        self.channels   = self.device.channels
+        self.bitdepth   = 32
         RNS.log(f"Using input device {self.device}", RNS.LOG_DEBUG)
 
     def flush(self):
@@ -90,6 +92,9 @@ class LineSource(LocalSource):
     def __init__(self, target_frame_ms=DEFAULT_FRAME_MS, codec=None, sink=None):
         self.frame_deque     = deque(maxlen=self.MAX_FRAMES)
         self.target_frame_ms = target_frame_ms
+        self.samplerate      = None
+        self.channels        = None
+        self.bitdepth        = None
         self.should_run      = False
         self.ingest_thread   = None
         self.recording_lock  = threading.Lock()
@@ -132,6 +137,8 @@ class LineSource(LocalSource):
 
             self.backend           = Backend(samplerate=self.preferred_samplerate)
             self.samplerate        = self.backend.samplerate
+            self.bitdepth          = self.backend.bitdepth
+            self.channels          = self.backend.channels
             self.samples_per_frame = math.ceil((self.target_frame_ms/1000)*self.samplerate)
 
     def start(self):

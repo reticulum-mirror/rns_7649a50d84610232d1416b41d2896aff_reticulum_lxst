@@ -1,3 +1,4 @@
+import RNS
 import numpy as np
 from .Codec import Codec
 
@@ -8,8 +9,10 @@ class Raw(Codec):
     BITDEPTH_128 = 0x03
     BITDEPTHS = ["float16", "float32", "float64", "float128"]
 
-    def __init__(self, channels=1, bitdepth=16):
-        channels = min(max(channels, 1), 32)
+    def __init__(self, channels=None, bitdepth=16):
+        if channels:
+            channels = min(max(channels, 1), 32)
+
         self.bitdepth = bitdepth
         self.channels = channels
 
@@ -27,6 +30,10 @@ class Raw(Codec):
             self.header_bitdpeth = self.BITDEPTH_16
 
     def encode(self, frame):
+        if self.channels == None:
+            self.channels = frame.shape[1]
+            RNS.log(f"{self} encoder set to {self.channels} channels")
+
         if frame.shape[1] > self.channels:
             frame = frame[:, range(0, self.channels)]
         elif frame.shape[1] < self.channels:

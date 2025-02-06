@@ -80,7 +80,7 @@ class LineSink(LocalSink):
             self.frame_deque.append(frame)
         
             if self.samples_per_frame == None:
-                self.samples_per_frame = len(frame)
+                self.samples_per_frame = frame.shape[0]
                 self.frame_time = self.samples_per_frame*(1/self.backend.samplerate)
                 RNS.log(f"{self} starting at {self.samples_per_frame} samples per frame", RNS.LOG_DEBUG)
 

@@ -132,7 +132,7 @@ class Opus(Codec):
         if not self.encoder_configured:
             self.opus_encoder.set_sampling_frequency(self.output_samplerate)
             self.opus_encoder.set_channels(self.channels)
-            RNS.log(f"Encoder set to {self.channels} channels")
+            RNS.log(f"{self} encoder set to {self.channels} channels, {RNS.prettyfrequency(self.output_samplerate)}")
             self.encoder_configured = True
 
         input_bytes = input_samples.tobytes()
@@ -150,6 +150,7 @@ class Opus(Codec):
             self.opus_decoder.set_channels(self.channels)
             self.opus_decoder.set_sampling_frequency(self.sink.samplerate)
             self.decoder_configured = True
+            RNS.log(f"{self} decoder set to {self.channels} channels, {RNS.prettyfrequency(self.sink.samplerate)}")
 
         decoded_frame_bytes = self.opus_decoder.decode(memoryview(bytearray(frame_bytes)))
         decoded_samples = np.frombuffer(decoded_frame_bytes, dtype="int16")/self.TYPE_MAP_FACTOR
