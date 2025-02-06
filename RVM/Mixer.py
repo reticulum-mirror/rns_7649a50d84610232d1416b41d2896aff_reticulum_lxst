@@ -6,8 +6,9 @@ import threading
 import numpy as np
 from collections import deque
 from inspect import currentframe
+from .Codecs import Codec, Raw
 from .Sinks import LocalSink
-from .Sources import LocalSource
+from .Sources import LocalSource, Backend
 
 class Mixer(LocalSource, LocalSink):
     MAX_FRAMES = 8
@@ -24,6 +25,7 @@ class Mixer(LocalSource, LocalSink):
         self.samplerate       = None
         self._sink            = None
         self._source          = None
+        self._codec           = None
 
         if samplerate: self.samplerate = samplerate
         if sink:       self.sink       = sink
@@ -45,13 +47,7 @@ class Mixer(LocalSource, LocalSink):
         elif len(self.incoming_frames[from_source]) < self.MAX_FRAMES:
             return True
         else:
-            # RNS.log(f"OVERRUN on {from_source}")
             return False
-
-        # if self._sink:
-        #     return self._sink.can_receive()
-        # else:
-        #     return True
 
     def handle_frame(self, frame, source):
         with self.insert_lock:
@@ -81,7 +77,8 @@ class Mixer(LocalSource, LocalSink):
                             source_count += 1
 
                     if source_count > 0:
-                        self.sink.handle_frame(mixed_frame, self)
+                        if self.codec: self.sink.handle_frame(self.codec.encode(mixed_frame), self)
+                        else:          self.sink.handle_frame(mixed_frame, self)
                     else:
                         time.sleep(self.frame_time*0.1)
 
