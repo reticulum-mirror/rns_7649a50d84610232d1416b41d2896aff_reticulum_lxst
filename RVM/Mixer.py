@@ -7,11 +7,13 @@ import numpy as np
 from collections import deque
 from inspect import currentframe
 from .Codecs import Codec, Raw
+from .Codecs.Codec import resample
 from .Sinks import LocalSink
 from .Sources import LocalSource, Backend
 
 class Mixer(LocalSource, LocalSink):
     MAX_FRAMES = 8
+    TYPE_MAP_FACTOR = np.iinfo("int16").max
 
     def __init__(self, target_frame_ms=40, samplerate=None, codec=None, sink=None):
         self.incoming_frames  = {}
@@ -66,6 +68,11 @@ class Mixer(LocalSource, LocalSink):
                     RNS.log(f"{self} frame time is {RNS.prettyshorttime(self.frame_time)}")
 
             frame_samples = source.codec.decode(frame)
+
+            # TODO: Add resampling for all source types
+            # if CODEC_OUTPUT_RATE != self.samplerate:
+            #     frame_samples = resample(frame_samples, source.bitdepth, source.channels, CODEC_OUTPUT_RATE, self.samplerate)
+
             self.incoming_frames[source].append(frame_samples)
 
     def _mixer_job(self):

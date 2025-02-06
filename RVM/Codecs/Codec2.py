@@ -43,6 +43,7 @@ class Codec2(Codec):
         self.channels = 1
         self.bitdepth = 16
         self.c2 = None
+        self.output_samplerate = self.OUTPUT_RATE
         self.set_mode(mode)
 
     def set_mode(self, mode):

@@ -1,4 +1,7 @@
+import numpy as np
 from pydub import AudioSegment
+
+TYPE_MAP_FACTOR = np.iinfo("int16").max
 
 class Codec():
     preferred_samplerate = None
@@ -24,3 +27,14 @@ def resample_bytes(sample_bytes, bitdepth, channels, input_rate, output_rate, no
 
     resampled_audio = audio.set_frame_rate(output_rate)
     return resampled_audio.get_array_of_samples().tobytes()
+
+def resample(input_samples, bitdepth, channels, input_rate, output_rate, normalize=False):
+    sample_width = bitdepth//8
+    input_samples = input_samples*TYPE_MAP_FACTOR
+    input_samples = input_samples.astype(np.int16)    
+    resampled_bytes = resample_bytes(input_samples.tobytes(), bitdepth, channels, input_rate, output_rate, normalize)
+    output_samples = np.frombuffer(resampled_bytes, dtype=np.int16)/TYPE_MAP_FACTOR
+    output_samples = output_samples.reshape(output_samples.shape[0]//channels, channels)
+    output_samples = output_samples.astype(np.float32)
+
+    return output_samples
