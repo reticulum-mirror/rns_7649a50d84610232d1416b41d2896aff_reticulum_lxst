@@ -2,6 +2,11 @@
 
 LXST is a simple and flexible real-time streaming format and delivery protocol that allows a wide variety of implementations, while using as little bandwidth as possible. It is built on top of [Reticulum](https://reticulum.network) and offers zero-conf stream routing, end-to-end encryption and Forward Secrecy, and can be transported over any kind of medium that Reticulum supports.
 
+- Provides a variety of ready-to-use primitives, for easily creating applications such as:
+  - Telephony
+  - Two-way radio systems
+  - Trunked and routed real-time two-way radio systems
+  - Media streaming
 - Can handle real-time signal streams with end-to-end latencies below 10 milliseconds
 - Supports encoding and decoding stream contents with a range of different codecs
   - Raw and lossless streams with arbitrary sample rates
@@ -18,11 +23,6 @@ LXST is a simple and flexible real-time streaming format and delivery protocol t
   - Ultra low-bandwidth voice communications with Codec2
     - Provides intelligible voice between 700bps and 3200bps
 - Has in-band signalling support for call, communications, media and stream management
-- Provides a variety of ready-to-use primitives, for easily creating applications such as:
-  - Telephony
-  - Two-way radio systems
-  - Trunked and routed real-time two-way radio systems
-  - Media streaming
 
 ## Transport Encryption
 
