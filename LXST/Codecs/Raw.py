@@ -32,7 +32,7 @@ class Raw(Codec):
     def encode(self, frame):
         if self.channels == None:
             self.channels = frame.shape[1]
-            RNS.log(f"{self} encoder set to {self.channels} channels")
+            RNS.log(f"{self} encoder set to {self.channels} channels", RNS.LOG_DEBUG)
 
         if frame.shape[1] > self.channels:
             frame = frame[:, range(0, self.channels)]

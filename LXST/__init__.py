@@ -1,4 +1,4 @@
-APP_NAME = "LXST"
+APP_NAME = "lxst"
 
 from .Pipeline import Pipeline
 from .Mixer import Mixer

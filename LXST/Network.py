@@ -48,10 +48,12 @@ class SignallingReceiver():
             RNS.trace_exception(e)
 
 class Packetizer(RemoteSink):
-    def __init__(self, destination):
+    def __init__(self, destination, failure_callback=None):
         self.destination = destination
         self.should_run = False
         self.source = None
+        self.transmit_failure = False
+        self.__failure_calback = failure_callback
 
     def handle_frame(self, frame, source=None):
         if type(self.destination) == RNS.Link and not self.destination.status == RNS.Link.ACTIVE:
@@ -61,7 +63,9 @@ class Packetizer(RemoteSink):
         frame = codec_header_byte(type(self.source.codec))+frame
         packet_data = {FIELD_FRAMES:frame}
         frame_packet = RNS.Packet(self.destination, mp.packb(packet_data), create_receipt=False)
-        frame_packet.send()
+        if frame_packet.send() == False:
+            self.transmit_failure = True
+            if callable(self.__failure_calback): self.__failure_calback()
 
     def start(self):
         if not self.should_run:
