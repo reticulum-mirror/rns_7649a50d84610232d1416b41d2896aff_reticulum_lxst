@@ -55,7 +55,10 @@ class Telephone(SignallingReceiver):
         RNS.log(f"{self} listening on {RNS.prettyhexrep(self.destination.hash)}", RNS.LOG_DEBUG)
 
     def announce(self):
-        self.destination.announce()
+        def job():
+            time.sleep(1)
+            self.destination.announce()
+        threading.Thread(target=job, daemon=True).start()
 
     def set_ringing_callback(self, callback):
         if not callable(callback): raise TypeError(f"Invalid callback, {callback} is not callable")
@@ -149,7 +152,7 @@ class Telephone(SignallingReceiver):
         self.receive_codec = Null()
 
     def select_call_frame_time(self):
-        self.target_frame_time_ms = 40
+        self.target_frame_time_ms = 60
         return self.target_frame_time_ms
 
     def __open_pipelines(self, identity):
