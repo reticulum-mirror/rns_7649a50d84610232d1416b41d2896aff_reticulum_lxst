@@ -39,6 +39,7 @@ class Telephone(SignallingReceiver):
         self.auto_answer = auto_answer
         self.active_call = None
         self.__ringing_callback = None
+        self.__ended_callback = None
         self.audio_output = None
         self.audio_input = None
         self.transmit_codec = None
@@ -59,11 +60,16 @@ class Telephone(SignallingReceiver):
         if not callable(callback): raise TypeError(f"Invalid callback, {callback} is not callable")
         self.__ringing_callback = callback
 
+    def set_ended_callback(self, callback):
+        if not callable(callback): raise TypeError(f"Invalid callback, {callback} is not callable")
+        self.__ended_callback = callback
+
     def __incoming_link_established(self, link):
         link.is_incoming = True
         link.is_outgoing = False
         with self.call_handler_lock:
             if self.active_call:
+                RNS.log(f"Incoming call, but already in-call with {RNS.prettyhexrep(self.active_call.hash)}, signalling busy", RNS.LOG_DEBUG)
                 self.signal(Signalling.STATUS_BUSY, link)
                 link.teardown()
             else:
@@ -82,8 +88,7 @@ class Telephone(SignallingReceiver):
                 RNS.log(f"Caller identified as {RNS.prettyhexrep(identity.hash)}, ringing", RNS.LOG_DEBUG)
                 self.active_call = link
                 self.signal(Signalling.STATUS_RINGING, self.active_call)
-                if callable(self.__ringing_callback):
-                    self.__ringing_callback(identity)
+                if callable(self.__ringing_callback): self.__ringing_callback(identity)
                 if self.auto_answer:
                     def cb():
                         RNS.log(f"Auto-answering call from {RNS.prettyhexrep(identity.hash)} in {RNS.prettytime(self.auto_answer)}", RNS.LOG_DEBUG)
@@ -104,7 +109,7 @@ class Telephone(SignallingReceiver):
     def answer(self, identity):
         with self.call_handler_lock:
             if self.active_call and self.active_call.get_remote_identity() == identity and self.call_status > Signalling.STATUS_RINGING:
-                RNS.log(f"Incoming call from {identity.hash} already answered and active")
+                RNS.log(f"Incoming call from {RNS.prettyhexrep(identity.hash)} already answered and active")
                 return False
             elif not self.active_call:
                 RNS.log(f"Answering call failed, no active incoming call", RNS.LOG_ERROR)
@@ -120,15 +125,18 @@ class Telephone(SignallingReceiver):
                 return True
 
     def hangup(self):
-        self.__stop_pipelines()
-        self.transmit_mixer = None
-        self.receive_pipeline = None
-        self.transmit_pipeline = None
         if self.active_call:
-            remote_identity = self.active_call.get_remote_identity()
-            if self.active_call.status == RNS.Link.ACTIVE: self.active_call.teardown()
-            self.active_call = None
-            RNS.log(f"Call with {RNS.prettyhexrep(remote_identity.hash)} terminated", RNS.LOG_DEBUG)
+            with self.call_handler_lock:
+                terminating_call = self.active_call; self.active_call = None
+                remote_identity = terminating_call.get_remote_identity()
+                if terminating_call.status == RNS.Link.ACTIVE:
+                    terminating_call.teardown()
+                self.__stop_pipelines()
+                self.transmit_mixer = None
+                self.receive_pipeline = None
+                self.transmit_pipeline = None
+                RNS.log(f"Call with {RNS.prettyhexrep(remote_identity.hash)} terminated", RNS.LOG_DEBUG)
+                if callable(self.__ended_callback): self.__ended_callback(remote_identity)
 
     def select_call_codecs(self):
         self.transmit_codec = Opus(profile=Opus.PROFILE_VOICE_MEDIUM)
@@ -203,6 +211,7 @@ class Telephone(SignallingReceiver):
 
     def __outgoing_link_established(self, link):
         RNS.log(f"Link established for call with {link.get_remote_identity()}", RNS.LOG_DEBUG)
+        link.set_link_closed_callback(self.__link_closed)
         self.handle_signalling_from(link)
 
     def __outgoing_link_closed(self, link):
@@ -251,10 +260,6 @@ if __name__ == "__main__":
     else:
         RNS.log(f"Calling {rid}")
         t.call(rid)
-
-        input()
-        RNS.log("Switching codec")
-        t.transmit_pipeline.codec = Codec2(mode=Codec2.CODEC2_3200)
 
         input()
         RNS.log("Hanging up")
