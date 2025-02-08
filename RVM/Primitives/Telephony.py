@@ -169,14 +169,8 @@ class Telephone(SignallingReceiver):
 
     def __start_pipelines(self):
         with self.pipeline_lock:
-            if self.transmit_mixer:      self.transmit_mixer.start()
-            # if self.audio_input:       self.audio_input.start()
-
-            # TODO: Remove debug ###################################
-            if self.active_call.is_outgoing:
-                if self.audio_input:       self.audio_input.start()
-            ########################################################
-
+            if self.transmit_mixer:    self.transmit_mixer.start()
+            if self.audio_input:       self.audio_input.start()
             if self.transmit_pipeline: self.transmit_pipeline.start()
             RNS.log(f"Audio pipelines started", RNS.LOG_DEBUG)
 
