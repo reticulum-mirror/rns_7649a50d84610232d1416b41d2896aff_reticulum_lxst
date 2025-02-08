@@ -1,4 +1,4 @@
-APP_NAME = "rvm"
+APP_NAME = "LXST"
 
 from .Pipeline import Pipeline
 from .Mixer import Mixer

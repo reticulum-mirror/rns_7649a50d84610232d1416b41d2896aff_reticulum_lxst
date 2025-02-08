@@ -1,38 +1,38 @@
 import RNS
-import RVM
+import LXST
 import sys
 import time
 RNS.loglevel = RNS.LOG_DEBUG
 
 target_frame_ms  = 20
 pipelined_output = True
-raw              = RVM.Codecs.Raw()
+raw              = LXST.Codecs.Raw()
 
 # Pipelined mixer example
 if pipelined_output:
-    opus         = RVM.Codecs.Opus(profile=RVM.Codecs.Opus.PROFILE_AUDIO_HIGH)
-    codec2       = RVM.Codecs.Codec2(mode=RVM.Codecs.Codec2.CODEC2_3200)
-    line_sink    = RVM.Sinks.LineSink()
-    mixer        = RVM.Mixer(target_frame_ms=target_frame_ms)
-    loopback     = RVM.Sources.Loopback()
+    opus         = LXST.Codecs.Opus(profile=LXST.Codecs.Opus.PROFILE_AUDIO_HIGH)
+    codec2       = LXST.Codecs.Codec2(mode=LXST.Codecs.Codec2.CODEC2_3200)
+    line_sink    = LXST.Sinks.LineSink()
+    mixer        = LXST.Mixer(target_frame_ms=target_frame_ms)
+    loopback     = LXST.Sources.Loopback()
 
     codec        = opus
     
-    file_source1 = RVM.Sources.OpusFileSource("./docs/speech_stereo.opus", codec=raw, sink=mixer, loop=True, target_frame_ms=target_frame_ms)
-    file_source2 = RVM.Sources.OpusFileSource("./docs/podcast.opus", codec=raw, sink=mixer, loop=True, target_frame_ms=target_frame_ms)
-    line_source  = RVM.Sources.LineSource(target_frame_ms=target_frame_ms, codec=raw, sink=mixer)
+    file_source1 = LXST.Sources.OpusFileSource("./docs/speech_stereo.opus", codec=raw, sink=mixer, loop=True, target_frame_ms=target_frame_ms)
+    file_source2 = LXST.Sources.OpusFileSource("./docs/podcast.opus", codec=raw, sink=mixer, loop=True, target_frame_ms=target_frame_ms)
+    line_source  = LXST.Sources.LineSource(target_frame_ms=target_frame_ms, codec=raw, sink=mixer)
 
-    input_pipeline  = RVM.Pipeline(source=mixer, codec=codec, sink=loopback)
-    output_pipeline = RVM.Pipeline(source=loopback, codec=codec, sink=line_sink)
+    input_pipeline  = LXST.Pipeline(source=mixer, codec=codec, sink=loopback)
+    output_pipeline = LXST.Pipeline(source=loopback, codec=codec, sink=line_sink)
     input_pipeline.start(); output_pipeline.start()
 
 # Simple mixer example with output directly to sink
 else:
-    line_sink    = RVM.Sinks.LineSink()
-    mixer        = RVM.Mixer(target_frame_ms=target_frame_ms, sink=line_sink)
-    file_source1 = RVM.Sources.OpusFileSource("./docs/speech_stereo.opus", codec=raw, sink=mixer, loop=True, target_frame_ms=target_frame_ms)
-    file_source2 = RVM.Sources.OpusFileSource("./docs/podcast.opus", codec=raw, sink=mixer, loop=True, target_frame_ms=target_frame_ms)
-    line_source  = RVM.Sources.LineSource(target_frame_ms=target_frame_ms, codec=raw, sink=mixer)
+    line_sink    = LXST.Sinks.LineSink()
+    mixer        = LXST.Mixer(target_frame_ms=target_frame_ms, sink=line_sink)
+    file_source1 = LXST.Sources.OpusFileSource("./docs/speech_stereo.opus", codec=raw, sink=mixer, loop=True, target_frame_ms=target_frame_ms)
+    file_source2 = LXST.Sources.OpusFileSource("./docs/podcast.opus", codec=raw, sink=mixer, loop=True, target_frame_ms=target_frame_ms)
+    line_source  = LXST.Sources.LineSource(target_frame_ms=target_frame_ms, codec=raw, sink=mixer)
 
 mixer.start()
 line_source.start()

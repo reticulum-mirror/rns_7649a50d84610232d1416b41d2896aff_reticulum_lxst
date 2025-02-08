@@ -1,14 +1,14 @@
 import RNS
-import RVM
+import LXST
 import time
 import threading
 
-from RVM import APP_NAME
-from RVM import Mixer, Pipeline
-from RVM.Codecs import Raw, Opus, Codec2, Null
-from RVM.Sinks import LineSink
-from RVM.Sources import LineSource
-from RVM.Network import SignallingReceiver, Packetizer, LinkSource
+from LXST import APP_NAME
+from LXST import Mixer, Pipeline
+from LXST.Codecs import Raw, Opus, Codec2, Null
+from LXST.Sinks import LineSink
+from LXST.Sources import LineSource
+from LXST.Network import SignallingReceiver, Packetizer, LinkSource
 
 PRIMITIVE_NAME = "telephony"
 
@@ -156,12 +156,12 @@ class Telephone(SignallingReceiver):
 
                     self.transmit_mixer = Mixer(target_frame_ms=self.target_frame_time_ms)
                     self.audio_input = LineSource(target_frame_ms=self.target_frame_time_ms, codec=Raw(), sink=self.transmit_mixer)
-                    self.transmit_pipeline = RVM.Pipeline(source=self.transmit_mixer,
+                    self.transmit_pipeline = LXST.Pipeline(source=self.transmit_mixer,
                                                           codec=self.transmit_codec,
                                                           sink=Packetizer(self.active_call))
                     
                     self.audio_output = LineSink()
-                    self.receive_pipeline = RVM.Pipeline(source=LinkSource(link=self.active_call, signalling_receiver=self),
+                    self.receive_pipeline = LXST.Pipeline(source=LinkSource(link=self.active_call, signalling_receiver=self),
                                                          codec=self.receive_codec,
                                                          sink=self.audio_output)
                     
