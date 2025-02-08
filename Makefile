@@ -14,8 +14,8 @@ remove_symlinks:
 create_symlinks:
 	@echo Creating symlinks...
 	-ln -s ../Reticulum/RNS ./
-	-ln -s ../../LXST ./LXST/Utilities/LXST
-	-ln -s ../LXST ./examples/LXST
+	-ln -s ../../LXST/ ./LXST/Utilities/LXST
+	-ln -s ../LXST/ ./examples/LXST
 
 build_wheel:
 	python3 setup.py sdist bdist_wheel
