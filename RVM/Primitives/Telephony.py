@@ -8,8 +8,7 @@ from RVM import Mixer, Pipeline
 from RVM.Codecs import Raw, Opus, Codec2
 from RVM.Sinks import LineSink
 from RVM.Sources import LineSource
-from RVM.Network import Packetizer, LinkSource
-from RNS.vendor import umsgpack as mp
+from RVM.Network import SignallingReceiver, Packetizer, LinkSource
 
 PRIMITIVE_NAME = "telephony"
 
@@ -23,13 +22,15 @@ class Signalling():
     CALL_STATUS_CODES  = [STATUS_BUSY, STATUS_REJECTED, STATUS_AVAILABLE,
                           STATUS_RINGING, STATUS_CONNECTING, STATUS_ESTABLISHED]
 
-class Telephone():
-    RING_TIME        = 30
+class Telephone(SignallingReceiver):
+    RING_TIME          = 30
 
     def __init__(self, identity, ring_time=RING_TIME, auto_answer=None):
+        super().__init__()
         # if not isinstance(identity, RNS.Identity): raise TypeError("Invalid identity")
         self.identity = identity
         self.destination = RNS.Destination(self.identity, RNS.Destination.IN, RNS.Destination.SINGLE, APP_NAME, PRIMITIVE_NAME)
+        self.destination.set_proof_strategy(RNS.Destination.PROVE_NONE)
         self.destination.set_link_established_callback(self.__incoming_link_established)
         self.call_handler_lock = threading.Lock()
         self.pipeline_lock = threading.Lock()
@@ -38,9 +39,10 @@ class Telephone():
         self.auto_answer = auto_answer
         self.active_call = None
         self.__ringing_callback = None
-        self.codec = None
         self.audio_output = None
         self.audio_input = None
+        self.transmit_codec = None
+        self.receive_codec = None
         self.local_mixer = None
         self.remote_mixer = None
         self.receive_pipeline = None
@@ -95,11 +97,9 @@ class Telephone():
             self.hangup()
 
     def signal(self, signal, link):
-        RNS.log(f"Signalling {signal}")
+        RNS.log(f"{self} signalling {signal}")
         if signal in Signalling.CALL_STATUS_CODES: self.call_status = signal
-        signalling_data = [signal]
-        signalling_packet = RNS.Packet(link, mp.packb(signalling_data), create_receipt=False)
-        signalling_packet.send()
+        super().signal(signal, link)
 
     def answer(self, identity):
         with self.call_handler_lock:
@@ -131,8 +131,14 @@ class Telephone():
             RNS.log(f"Call with {RNS.prettyhexrep(remote_identity.hash)} terminated", RNS.LOG_DEBUG)
 
     def select_codec(self):
-        self.codec = Opus(profile=Opus.PROFILE_VOICE_MEDIUM)
-        return self.codec
+        self.transmit_codec = Opus(profile=Opus.PROFILE_VOICE_MEDIUM)
+        self.receive_codec = Opus(profile=Opus.PROFILE_VOICE_MEDIUM)
+
+        # TODO: Remove debug
+        # self.transmit_codec = Opus(profile=Opus.PROFILE_AUDIO_HIGH)
+        # self.receive_codec = Opus(profile=Opus.PROFILE_AUDIO_HIGH)
+        # self.transmit_codec = Codec2(mode=Codec2.CODEC2_3200)
+        # self.receive_codec = Codec2(mode=Codec2.CODEC2_3200)
 
     def select_target_frame_time(self):
         self.target_frame_time_ms = 40
@@ -144,28 +150,41 @@ class Telephone():
                 RNS.log("Identity mismatch while opening call pipelines, tearing down call", RNS.LOG_ERROR)
                 self.hangup()
             else:
-                RNS.log(f"Opening audio pipelines for call with {RNS.prettyhexrep(identity.hash)}")
-                self.signal(Signalling.STATUS_CONNECTING, self.active_call)
-                self.select_target_frame_time()
-                self.select_codec()
-                link_source = LinkSource(link=self.active_call, signalling_packet_handler=self._packet)
-                self.remote_mixer = Mixer(target_frame_ms=self.target_frame_time_ms)
-                self.audio_input = LineSource(target_frame_ms=self.target_frame_time_ms, codec=Raw(), sink=self.remote_mixer)
-                self.audio_output = LineSink()
-                self.transmit_pipeline = RVM.Pipeline(source=self.remote_mixer, codec=self.codec, sink=Packetizer(self.active_call))
-                self.receive_pipeline = RVM.Pipeline(source=link_source, codec=self.codec, sink=self.audio_output)
-                self.signal(Signalling.STATUS_ESTABLISHED, self.active_call)
+                if not hasattr(self.active_call, "pipelines_opened"): self.active_call.pipelines_opened = False
+                if self.active_call.pipelines_opened:
+                    RNS.log(f"Pipelines already openened for call with {RNS.prettyhexrep(identity.hash)}", RNS.LOG_ERROR)
+                else:
+                    RNS.log(f"Opening audio pipelines for call with {RNS.prettyhexrep(identity.hash)}")
+                    if self.active_call.is_incoming: self.signal(Signalling.STATUS_CONNECTING, self.active_call)
+                    self.select_target_frame_time()
+                    self.select_codec()
+                    link_source = LinkSource(link=self.active_call, signalling_receiver=self)
+                    self.remote_mixer = Mixer(target_frame_ms=self.target_frame_time_ms)
+                    self.audio_input = LineSource(target_frame_ms=self.target_frame_time_ms, codec=Raw(), sink=self.remote_mixer)
+                    # self.audio_input = LineSource(target_frame_ms=self.target_frame_time_ms)
+                    self.audio_output = LineSink()
+                    self.transmit_pipeline = RVM.Pipeline(source=self.remote_mixer, codec=self.transmit_codec, sink=Packetizer(self.active_call))
+                    # self.transmit_pipeline = RVM.Pipeline(source=self.audio_input, codec=self.transmit_codec, sink=Packetizer(self.active_call))
+                    self.receive_pipeline = RVM.Pipeline(source=link_source, codec=self.receive_codec, sink=self.audio_output)
+                    self.signal(Signalling.STATUS_ESTABLISHED, self.active_call)
 
     def __start_pipelines(self):
         with self.pipeline_lock:
             if self.remote_mixer:      self.remote_mixer.start()
-            if self.receive_pipeline:  self.receive_pipeline.start()
+            # if self.audio_input:       self.audio_input.start()
+
+            # TODO: Remove debug ###################################
+            if self.active_call.is_incoming:
+                if self.audio_input:       self.audio_input.start()
+            ########################################################
+            
             if self.transmit_pipeline: self.transmit_pipeline.start()
             RNS.log(f"Audio pipelines started", RNS.LOG_DEBUG)
 
     def __stop_pipelines(self):
         with self.pipeline_lock:
             if self.remote_mixer:      self.remote_mixer.stop()
+            if self.audio_input:       self.audio_input.stop()
             if self.receive_pipeline:  self.receive_pipeline.stop()
             if self.transmit_pipeline: self.transmit_pipeline.stop()
             RNS.log(f"Audio pipelines stopped", RNS.LOG_DEBUG)
@@ -191,34 +210,34 @@ class Telephone():
 
     def __outgoing_link_established(self, link):
         RNS.log(f"Link established for call with {link.get_remote_identity()}", RNS.LOG_DEBUG)
-        link.set_packet_callback(self._packet)
+        self.handle_signalling_from(link)
 
     def __outgoing_link_closed(self, link):
         pass
 
-    def _packet(self, data, packet):
-        message = mp.unpackb(data)
-        if packet.link != self.active_call:
-            RNS.log("Received packet on non-active call, ignoring", RNS.LOG_DEBUG)
-        else:
-            if message[0] == Signalling.STATUS_BUSY:
-                RNS.log("Remote is busy, terminating", RNS.LOG_DEBUG)
-                self.hangup()
-            elif message[0] == Signalling.STATUS_REJECTED:
-                RNS.log("Remote rejected call, terminating", RNS.LOG_DEBUG)
-                self.hangup()
-            elif message[0] == Signalling.STATUS_AVAILABLE:
-                RNS.log("Line available, sending identification", RNS.LOG_DEBUG)
-                packet.link.identify(self.identity)
-            elif message[0] == Signalling.STATUS_RINGING:
-                RNS.log("Identification accepted, remote is now ringing", RNS.LOG_DEBUG)
-            elif message[0] == Signalling.STATUS_CONNECTING:
-                RNS.log("Call answered, remote is performing call setup, opening audio pipelines")
-                self.__open_pipelines(self.active_call.get_remote_identity())
-            elif message[0] == Signalling.STATUS_ESTABLISHED:
-                RNS.log("Remote call setup completed, starting audio pipelines")
-                self.__start_pipelines()
-                RNS.log(f"Call setup complete for {RNS.prettyhexrep(self.active_call.get_remote_identity().hash)}")
+    def signalling_received(self, signals, source):
+        for signal in signals:
+            if source != self.active_call:
+                RNS.log("Received signalling on non-active call, ignoring", RNS.LOG_DEBUG)
+            else:
+                if signal == Signalling.STATUS_BUSY:
+                    RNS.log("Remote is busy, terminating", RNS.LOG_DEBUG)
+                    self.hangup()
+                elif signal == Signalling.STATUS_REJECTED:
+                    RNS.log("Remote rejected call, terminating", RNS.LOG_DEBUG)
+                    self.hangup()
+                elif signal == Signalling.STATUS_AVAILABLE:
+                    RNS.log("Line available, sending identification", RNS.LOG_DEBUG)
+                    source.identify(self.identity)
+                elif signal == Signalling.STATUS_RINGING:
+                    RNS.log("Identification accepted, remote is now ringing", RNS.LOG_DEBUG)
+                elif signal == Signalling.STATUS_CONNECTING:
+                    RNS.log("Call answered, remote is performing call setup, opening audio pipelines", RNS.LOG_DEBUG)
+                    self.__open_pipelines(self.active_call.get_remote_identity())
+                elif signal == Signalling.STATUS_ESTABLISHED:
+                    RNS.log("Remote call setup completed, starting audio pipelines", RNS.LOG_DEBUG)
+                    self.__start_pipelines()
+                    RNS.log(f"Call setup complete for {RNS.prettyhexrep(self.active_call.get_remote_identity().hash)}", RNS.LOG_DEBUG)
 
 # TODO: Remove debug
 if __name__ == "__main__":

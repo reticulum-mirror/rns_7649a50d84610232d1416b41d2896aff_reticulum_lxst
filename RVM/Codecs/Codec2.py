@@ -52,19 +52,6 @@ class Codec2(Codec):
         self.c2 = pycodec2.Codec2(self.mode)
 
     def encode(self, frame):
-        # TODO: Remove debug ########
-        # if not hasattr(self, "fc"):
-        #     self.fc = 0
-        # self.fc += 1
-        # if self.fc%100 == 0:
-        #     if self.mode == self.CODEC2_700C:
-        #         RNS.log("Switcing mode to 3200")
-        #         self.set_mode(self.CODEC2_3200)
-        #     else:
-        #         RNS.log("Switcing mode to 700C")
-        #         self.set_mode(self.CODEC2_700C)
-        ##############################
-
         if frame.shape[1] == 0:
             raise CodecError("Cannot encode frame with 0 channels")
         elif frame.shape[1] > self.channels:
