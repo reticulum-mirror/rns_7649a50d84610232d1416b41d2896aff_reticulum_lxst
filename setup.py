@@ -17,7 +17,7 @@ setuptools.setup(
     packages=["LXST", "LXST.Utilities"],
     classifiers=[
         "Programming Language :: Python :: 3",
-        "License :: OSI Approved :: GPLv3 License",
+        "License :: Other/Proprietary License",
         "Operating System :: OS Independent",
     ],
     entry_points= {

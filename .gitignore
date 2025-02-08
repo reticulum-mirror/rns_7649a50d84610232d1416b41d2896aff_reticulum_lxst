@@ -4,7 +4,7 @@ testutils
 build
 dist
 docs/build
-LXST*.egg-info
+lxst*.egg-info
 examples/LXST
 LXST/Utilities/LXST
 RNS
