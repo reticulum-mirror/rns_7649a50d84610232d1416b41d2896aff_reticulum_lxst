@@ -1,6 +1,7 @@
 from .Sources import *
 from .Sinks   import *
 from .Codecs  import *
+from .Network import Packetizer
 
 class PipelineError(Exception):
     pass
@@ -10,16 +11,18 @@ class Pipeline():
         if not issubclass(type(source), Source): raise PipelineError("Audio pipeline initialised with invalid source")
         if not issubclass(type(sink), Sink)    : raise PipelineError("Audio pipeline initialised with invalid sink")
         if not issubclass(type(codec), Codec)  : raise PipelineError("Audio pipeline initialised with invalid codec")
-        self.source              = source
-        self.source.codec        = codec
-        self.source.sink         = sink
-        self.source.codec.sink   = sink
-        self.source.codec.source = source
+        self._codec          = None
+        self.source          = source
+        self.source.pipeline = self
+        self.source.sink     = sink
+        self.codec           = codec
 
         if isinstance(sink, Loopback):
             sink.samplerate = source.samplerate
         if isinstance(source, Loopback):
             source._sink = sink
+        if isinstance(sink, Packetizer):
+            sink.source = source
 
     @property
     def codec(self):
@@ -27,6 +30,14 @@ class Pipeline():
             return self.source.codec
         else:
             return None
+
+    @codec.setter
+    def codec(self, codec):
+        if not self._codec == codec:
+            self._codec = codec
+            self.source.codec = self._codec
+            self.source.codec.sink   = self.sink
+            self.source.codec.source = self.source
 
     @property
     def sink(self):

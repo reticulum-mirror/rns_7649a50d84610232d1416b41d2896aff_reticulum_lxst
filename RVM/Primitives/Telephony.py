@@ -5,7 +5,7 @@ import threading
 
 from RVM import APP_NAME
 from RVM import Mixer, Pipeline
-from RVM.Codecs import Raw, Opus, Codec2
+from RVM.Codecs import Raw, Opus, Codec2, Null
 from RVM.Sinks import LineSink
 from RVM.Sources import LineSource
 from RVM.Network import SignallingReceiver, Packetizer, LinkSource
@@ -44,7 +44,7 @@ class Telephone(SignallingReceiver):
         self.transmit_codec = None
         self.receive_codec = None
         self.local_mixer = None
-        self.remote_mixer = None
+        self.transmit_mixer = None
         self.receive_pipeline = None
         self.transmit_pipeline = None
         self.target_frame_time_ms = None
@@ -121,7 +121,7 @@ class Telephone(SignallingReceiver):
 
     def hangup(self):
         self.__stop_pipelines()
-        self.remote_mixer = None
+        self.transmit_mixer = None
         self.receive_pipeline = None
         self.transmit_pipeline = None
         if self.active_call:
@@ -130,17 +130,11 @@ class Telephone(SignallingReceiver):
             self.active_call = None
             RNS.log(f"Call with {RNS.prettyhexrep(remote_identity.hash)} terminated", RNS.LOG_DEBUG)
 
-    def select_codec(self):
+    def select_call_codecs(self):
         self.transmit_codec = Opus(profile=Opus.PROFILE_VOICE_MEDIUM)
-        self.receive_codec = Opus(profile=Opus.PROFILE_VOICE_MEDIUM)
+        self.receive_codec = Null()
 
-        # TODO: Remove debug
-        # self.transmit_codec = Opus(profile=Opus.PROFILE_AUDIO_HIGH)
-        # self.receive_codec = Opus(profile=Opus.PROFILE_AUDIO_HIGH)
-        # self.transmit_codec = Codec2(mode=Codec2.CODEC2_3200)
-        # self.receive_codec = Codec2(mode=Codec2.CODEC2_3200)
-
-    def select_target_frame_time(self):
+    def select_call_frame_time(self):
         self.target_frame_time_ms = 40
         return self.target_frame_time_ms
 
@@ -156,34 +150,33 @@ class Telephone(SignallingReceiver):
                 else:
                     RNS.log(f"Opening audio pipelines for call with {RNS.prettyhexrep(identity.hash)}")
                     if self.active_call.is_incoming: self.signal(Signalling.STATUS_CONNECTING, self.active_call)
-                    self.select_target_frame_time()
-                    self.select_codec()
-                    link_source = LinkSource(link=self.active_call, signalling_receiver=self)
-                    self.remote_mixer = Mixer(target_frame_ms=self.target_frame_time_ms)
-                    self.audio_input = LineSource(target_frame_ms=self.target_frame_time_ms, codec=Raw(), sink=self.remote_mixer)
-                    # self.audio_input = LineSource(target_frame_ms=self.target_frame_time_ms)
+                    
+                    self.select_call_frame_time()
+                    self.select_call_codecs()
+
+                    self.transmit_mixer = Mixer(target_frame_ms=self.target_frame_time_ms)
+                    self.audio_input = LineSource(target_frame_ms=self.target_frame_time_ms, codec=Raw(), sink=self.transmit_mixer)
+                    self.transmit_pipeline = RVM.Pipeline(source=self.transmit_mixer,
+                                                          codec=self.transmit_codec,
+                                                          sink=Packetizer(self.active_call))
+                    
                     self.audio_output = LineSink()
-                    self.transmit_pipeline = RVM.Pipeline(source=self.remote_mixer, codec=self.transmit_codec, sink=Packetizer(self.active_call))
-                    # self.transmit_pipeline = RVM.Pipeline(source=self.audio_input, codec=self.transmit_codec, sink=Packetizer(self.active_call))
-                    self.receive_pipeline = RVM.Pipeline(source=link_source, codec=self.receive_codec, sink=self.audio_output)
+                    self.receive_pipeline = RVM.Pipeline(source=LinkSource(link=self.active_call, signalling_receiver=self),
+                                                         codec=self.receive_codec,
+                                                         sink=self.audio_output)
+                    
                     self.signal(Signalling.STATUS_ESTABLISHED, self.active_call)
 
     def __start_pipelines(self):
         with self.pipeline_lock:
-            if self.remote_mixer:      self.remote_mixer.start()
-            # if self.audio_input:       self.audio_input.start()
-
-            # TODO: Remove debug ###################################
-            if self.active_call.is_incoming:
-                if self.audio_input:       self.audio_input.start()
-            ########################################################
-            
+            if self.transmit_mixer:    self.transmit_mixer.start()
+            if self.audio_input:       self.audio_input.start()
             if self.transmit_pipeline: self.transmit_pipeline.start()
             RNS.log(f"Audio pipelines started", RNS.LOG_DEBUG)
 
     def __stop_pipelines(self):
         with self.pipeline_lock:
-            if self.remote_mixer:      self.remote_mixer.stop()
+            if self.transmit_mixer:    self.transmit_mixer.stop()
             if self.audio_input:       self.audio_input.stop()
             if self.receive_pipeline:  self.receive_pipeline.stop()
             if self.transmit_pipeline: self.transmit_pipeline.stop()
@@ -258,6 +251,10 @@ if __name__ == "__main__":
     else:
         RNS.log(f"Calling {rid}")
         t.call(rid)
+
+        input()
+        RNS.log("Switching codec")
+        t.transmit_pipeline.codec = Codec2(mode=Codec2.CODEC2_3200)
 
         input()
         RNS.log("Hanging up")

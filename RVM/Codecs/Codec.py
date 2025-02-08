@@ -14,6 +14,9 @@ class Codec():
 class CodecError(Exception):
     pass
 
+class Null(Codec):
+    pass
+
 def resample_bytes(sample_bytes, bitdepth, channels, input_rate, output_rate, normalize=False):
     sample_width = bitdepth//8
     audio = AudioSegment(

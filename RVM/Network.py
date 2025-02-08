@@ -1,6 +1,8 @@
 import RNS
+import threading
 from .Sinks import RemoteSink
 from .Sources import RemoteSource
+from .Codecs import codec_header_byte, codec_type
 from collections import deque
 from RNS.vendor import umsgpack as mp
 
@@ -9,6 +11,7 @@ FIELD_FRAMES     = 0x01
 
 class SignallingReceiver():
     def __init__(self, proxy=None):
+        # TODO: Add inband signalling scheduler
         self.outgoing_signals = deque()
         self.proxy = proxy
 
@@ -18,10 +21,15 @@ class SignallingReceiver():
     def signalling_received(self, signals, source):
         if self.proxy: self.proxy.signalling_received(signals, source)
 
-    def signal(self, signal, destination):
+    def signal(self, signal, destination, immediate=True):
         signalling_data = {FIELD_SIGNALLING:[signal]}
-        signalling_packet = RNS.Packet(destination, mp.packb(signalling_data), create_receipt=False)
-        signalling_packet.send()
+
+        if immediate:
+            signalling_packet = RNS.Packet(destination, mp.packb(signalling_data), create_receipt=False)
+            signalling_packet.send()
+        else:
+            # TODO: Add inband signalling scheduler
+            pass
 
     def _packet(self, data, packet, unpacked=None):
         try:
@@ -43,11 +51,14 @@ class Packetizer(RemoteSink):
     def __init__(self, destination):
         self.destination = destination
         self.should_run = False
+        self.source = None
 
     def handle_frame(self, frame, source=None):
         if type(self.destination) == RNS.Link and not self.destination.status == RNS.Link.ACTIVE:
             return
 
+        # TODO: Add inband signalling scheduler
+        frame = codec_header_byte(type(self.source.codec))+frame
         packet_data = {FIELD_FRAMES:frame}
         frame_packet = RNS.Packet(self.destination, mp.packb(packet_data), create_receipt=False)
         frame_packet.send()
@@ -62,28 +73,35 @@ class Packetizer(RemoteSink):
 
 class LinkSource(RemoteSource, SignallingReceiver):
     def __init__(self, link, signalling_receiver):
-        self.should_run = False
-        self.link       = link
-        self.proxy      = signalling_receiver
+        self.should_run   = False
+        self.link         = link
+        self.proxy        = signalling_receiver
+        self.receive_lock = threading.Lock()
         self.link.set_packet_callback(self._packet)
 
     def _packet(self, data, packet):
-        try:
-            unpacked = mp.unpackb(data)
-            if type(unpacked) == dict:
-                if FIELD_FRAMES in unpacked:
-                    frames = unpacked[FIELD_FRAMES]
-                    if type(frames) != list: frames = [frames]
-                    for frame in frames:
-                        if self.codec and self.sink:
-                            self.sink.handle_frame(self.codec.decode(frame), self)
+        with self.receive_lock:
+            try:
+                unpacked = mp.unpackb(data)
+                if type(unpacked) == dict:
+                    if FIELD_FRAMES in unpacked:
+                        frames = unpacked[FIELD_FRAMES]
+                        if type(frames) != list: frames = [frames]
+                        for frame in frames:
+                            frame_codec = codec_type(frame[0])
+                            if self.codec and self.sink:
+                                if type(self.codec) != frame_codec:
+                                    RNS.log(f"Remote switched codec to {frame_codec}", RNS.LOG_DEBUG)
+                                    self.pipeline.codec = frame_codec()
 
-                if FIELD_SIGNALLING in unpacked:
-                    super()._packet(data=None, packet=packet, unpacked=unpacked)
+                                self.sink.handle_frame(self.codec.decode(frame[1:]), self)
 
-        except Exception as e:
-            RNS.log(f"{self} could not process incoming packet: {e}", RNS.LOG_ERROR)
-            RNS.trace_exception(e)
+                    if FIELD_SIGNALLING in unpacked:
+                        super()._packet(data=None, packet=packet, unpacked=unpacked)
+
+            except Exception as e:
+                RNS.log(f"{self} could not process incoming packet: {e}", RNS.LOG_ERROR)
+                RNS.trace_exception(e)
 
     def start(self):
         if not self.should_run:
