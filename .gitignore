@@ -4,5 +4,5 @@ testutils
 build
 dist
 docs/build
-rvm*.egg-info
-examples/RVM
+LXST*.egg-info
+examples/LXST
