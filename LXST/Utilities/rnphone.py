@@ -93,7 +93,7 @@ class ReticulumTelephone():
                 exit(1)
         else:
             try:
-                print("No Primary Identity file found, creating new...")
+                print("No primary identity file found, creating new...")
                 self.identity = RNS.Identity()
                 self.identity.to_file(self.identitypath)
                 print("Created new Primary Identity %s" % (str(self.identity)))
