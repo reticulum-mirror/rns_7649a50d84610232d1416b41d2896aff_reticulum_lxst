@@ -1,4 +1,5 @@
 import RNS
+import time
 import threading
 from .Sinks import RemoteSink
 from .Sources import RemoteSource
@@ -55,6 +56,12 @@ class Packetizer(RemoteSink):
         self.transmit_failure = False
         self.__failure_calback = failure_callback
 
+        # TODO: Remove testing
+        # self.frames = 0
+        # self.frame_bytes = 0
+        # self.total_bytes = 0
+        # self.overhead_bytes = 0
+
     def handle_frame(self, frame, source=None):
         if type(self.destination) == RNS.Link and not self.destination.status == RNS.Link.ACTIVE:
             return
@@ -66,6 +73,21 @@ class Packetizer(RemoteSink):
         if frame_packet.send() == False:
             self.transmit_failure = True
             if callable(self.__failure_calback): self.__failure_calback()
+
+        # TODO: Remove testing
+        # self.frames += 1
+        # self.frame_bytes += len(frame)
+        # self.total_bytes += len(frame_packet.raw)
+        # self.overhead_bytes += len(frame_packet.raw)-len(frame)
+        # self.overhead_ratio = self.frame_bytes / self.total_bytes
+        # if not hasattr(self, "started"):
+        #     self.started = time.time()
+        #     rate = 0
+        #     codec_rate = 0
+        # else:
+        #     rate = (self.total_bytes*8)/(time.time()-self.started)
+        #     codec_rate = (self.frame_bytes*8)/(time.time()-self.started)
+        # print(f"\rP={len(frame_packet.raw)}/{len(frame)}/{len(frame_packet.raw)-len(frame)}  N={self.frames}  E={round(self.overhead_ratio*100,0)}%  O={RNS.prettysize(self.total_bytes)}  F={RNS.prettysize(self.frame_bytes)}  S={RNS.prettyspeed(rate)}  C={RNS.prettyspeed(codec_rate)}", end="            ")
 
     def start(self):
         if not self.should_run:
