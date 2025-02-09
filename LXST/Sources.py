@@ -143,7 +143,7 @@ class LineSource(LocalSource):
 
     def start(self):
         if not self.should_run:
-            RNS.log(f"{self} starting at {self.samples_per_frame} samples per frame", RNS.LOG_DEBUG)
+            RNS.log(f"{self} starting at {self.samples_per_frame} samples per frame, {self.channels} channels", RNS.LOG_DEBUG)
             self.should_run = True
             self.ingest_thread = threading.Thread(target=self.__ingest_job, daemon=True)
             self.ingest_thread.start()

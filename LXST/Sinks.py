@@ -62,6 +62,7 @@ class LineSink(LocalSink):
         self.preferred_samplerate = Backend.SAMPLERATE
         self.backend              = Backend(samplerate=self.preferred_samplerate)
         self.samplerate           = self.backend.samplerate
+        self.channels             = self.backend.device.channels
 
         self.samples_per_frame    = None
         self.frame_time           = None
@@ -82,7 +83,7 @@ class LineSink(LocalSink):
             if self.samples_per_frame == None:
                 self.samples_per_frame = frame.shape[0]
                 self.frame_time = self.samples_per_frame*(1/self.backend.samplerate)
-                RNS.log(f"{self} starting at {self.samples_per_frame} samples per frame", RNS.LOG_DEBUG)
+                RNS.log(f"{self} starting at {self.samples_per_frame} samples per frame, {self.channels} channels", RNS.LOG_DEBUG)
 
             if self.autodigest and not self.should_run:
                 if len(self.frame_deque) >= self.autostart_min:
@@ -108,6 +109,7 @@ class LineSink(LocalSink):
                         self.underrun_at = None
 
                         with self.insert_lock: frame = self.frame_deque.popleft()
+                        if frame.shape[1] > self.channels: frame = frame[:, 0:self.channels]
                         player.play(frame)
 
                         if len(self.frame_deque) > self.buffer_max_height:

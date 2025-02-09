@@ -15,7 +15,14 @@ class CodecError(Exception):
     pass
 
 class Null(Codec):
-    pass
+    def __init__(self):
+        pass
+
+    def encode(self, frame):
+        return frame
+
+    def decode(self, frame):
+        return frame
 
 def resample_bytes(sample_bytes, bitdepth, channels, input_rate, output_rate, normalize=False):
     sample_width = bitdepth//8

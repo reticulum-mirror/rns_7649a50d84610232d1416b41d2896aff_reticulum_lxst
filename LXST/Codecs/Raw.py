@@ -37,7 +37,10 @@ class Raw(Codec):
         if frame.shape[1] > self.channels:
             frame = frame[:, range(0, self.channels)]
         elif frame.shape[1] < self.channels:
-            frame = np.insert(frame, [0], a[:, [0]], axis=1)
+            new_frame = np.zeros(shape=(frame.shape[0], self.channels))
+            for n in range(0, frame.shape[1]): new_frame[:, n] = frame[:, n]
+            for n in range(frame.shape[1], new_frame.shape[1]): new_frame[:, n] = frame[:, frame.shape[1]-1]
+            frame = new_frame
 
         frame_header = (self.header_bitdpeth << 6) | self.channels-1
         frame_bytes = frame_header.to_bytes()+frame.astype(self.dtype).tobytes()

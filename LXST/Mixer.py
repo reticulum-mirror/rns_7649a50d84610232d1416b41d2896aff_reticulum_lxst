@@ -81,7 +81,7 @@ class Mixer(LocalSource, LocalSink):
                 if self.sink and self.sink.can_receive():
                     source_count = 0
                     mixed_frame = None
-                    for source in self.incoming_frames:
+                    for source in self.incoming_frames.copy():
                         if len(self.incoming_frames[source]) > 0:
                             next_frame = self.incoming_frames[source].popleft()
                             if source_count == 0: mixed_frame = next_frame
