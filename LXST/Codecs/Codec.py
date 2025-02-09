@@ -1,5 +1,5 @@
 import numpy as np
-from pydub import AudioSegment
+from .libs.pydub import AudioSegment
 
 TYPE_MAP_FACTOR = np.iinfo("int16").max
 
