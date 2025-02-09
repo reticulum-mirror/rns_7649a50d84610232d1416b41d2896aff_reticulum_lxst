@@ -8,6 +8,7 @@ import argparse
 
 from LXST._version import __version__
 from LXST.Primitives.Telephony import Telephone
+from RNS.vendor.configobj import ConfigObj
 
 class ReticulumTelephone():
     STATE_AVAILABLE  = 0x00
@@ -18,17 +19,86 @@ class ReticulumTelephone():
     CALL_TIMEOUT    = 5
 
     def __init__(self, configdir, rnsconfigdir, verbosity = 0):
+        self.configdir    = configdir
         self.should_run   = False
         self.state        = self.STATE_AVAILABLE
         self.last_input   = None
         self.call_timeout = self.CALL_TIMEOUT
+        self.reload_config()
         
-        reticulum       = RNS.Reticulum(configdir=rnsconfigdir, loglevel=3+verbosity)        
-        self.identity   = RNS.Identity()
+        reticulum       = RNS.Reticulum(configdir=rnsconfigdir, loglevel=3+verbosity)
         self.telephone  = Telephone(self.identity)
         self.telephone.set_ringing_callback(self.ringing)
         self.telephone.set_established_callback(self.call_established)
         self.telephone.set_ended_callback(self.call_ended)
+
+    def create_default_config(self):
+        rnphone_config = ConfigObj(__default_rnphone_config__.splitlines())
+        rnphone_config.filename = self.configpath
+        rnphone_config.write()
+
+    def reload_config(self):
+        # Get configuration
+        if self.configdir == None:
+            if os.path.isdir("/etc/rnphone") and os.path.isfile("/etc/rnphone/config"):
+                self.configdir = "/etc/rnphone"
+            elif os.path.isdir(RNS.Reticulum.userdir+"/.config/rnphone") and os.path.isfile(Reticulum.userdir+"/.config/rnphone/config"):
+                self.configdir = RNS.Reticulum.userdir+"/.config/rnphone"
+            else:
+                self.configdir = RNS.Reticulum.userdir+"/.rnphone"
+
+        self.configpath   = self.configdir+"/config"
+        self.ignoredpath  = self.configdir+"/ignored"
+        self.allowedpath  = self.configdir+"/allowed"
+        self.identitypath = self.configdir+"/identity"
+        self.storagedir   = self.configdir+"/storage"
+
+        if not os.path.isdir(self.storagedir):
+            os.makedirs(self.storagedir)
+
+        if not os.path.isfile(self.configpath):
+            print("Could not load config file, creating default configuration file...")
+            self.create_default_config()
+            print("Default config file created. Make any necessary changes in "+self.configpath+" and restart rnphone if needed.")
+            time.sleep(1.5)
+
+        if os.path.isfile(self.configpath):
+            try:
+                rnphone_config = ConfigObj(self.configpath)
+            except Exception as e:
+                RNS.log("Could not parse the configuration at "+self.configpath, RNS.LOG_ERROR)
+                RNS.log("Check your configuration file for errors!", RNS.LOG_ERROR)
+                RNS.panic()
+
+        self.apply_config()
+
+        # Generate or load primary identity
+        if os.path.isfile(self.identitypath):
+            try:
+                self.identity = RNS.Identity.from_file(self.identitypath)
+                if self.identity != None:
+                    pass
+                    # RNS.log("Loaded Primary Identity %s" % (str(self.identity)), RNS.LOG_DEBUG)
+                else:
+                    RNS.log("Could not load the Primary Identity from "+self.identitypath, RNS.LOG_ERROR)
+                    exit(1)
+            except Exception as e:
+                RNS.log("Could not load the Primary Identity from "+self.identitypath, RNS.LOG_ERROR)
+                RNS.log("The contained exception was: %s" % (str(e)), RNS.LOG_ERROR)
+                exit(1)
+        else:
+            try:
+                print("No Primary Identity file found, creating new...")
+                self.identity = RNS.Identity()
+                self.identity.to_file(self.identitypath)
+                print("Created new Primary Identity %s" % (str(self.identity)))
+            except Exception as e:
+                RNS.log("Could not create and save a new Primary Identity", RNS.LOG_ERROR)
+                RNS.log("The contained exception was: %s" % (str(e)), RNS.LOG_ERROR)
+                exit(1)
+
+    def apply_config(self):
+        pass
 
     @property
     def is_available(self):
@@ -161,6 +231,11 @@ def main():
     except KeyboardInterrupt:
         print("")
         exit()
+
+__default_rnphone_config__ = """# This is an example rnphone config file.
+# You should probably edit it to suit your
+# intended usage.
+"""
 
 if __name__ == "__main__":
     main()
