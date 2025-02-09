@@ -16,20 +16,22 @@ class ReticulumTelephone():
     STATE_RINGING    = 0x02
     STATE_IN_CALL    = 0x03
 
-    CALL_TIMEOUT    = 5
+    RING_TIME        = 30
+    WAIT_TIME        = 60
+    PATH_TIME        = 10
 
     def __init__(self, configdir, rnsconfigdir, verbosity = 0):
         self.configdir    = configdir
         self.should_run   = False
         self.state        = self.STATE_AVAILABLE
+        self.direction    = None
         self.last_input   = None
         self.first_run    = False
-        self.call_timeout = self.CALL_TIMEOUT
         self.reload_config()
         self.main_menu()
         
         reticulum       = RNS.Reticulum(configdir=rnsconfigdir, loglevel=3+verbosity)
-        self.telephone  = Telephone(self.identity)
+        self.telephone  = Telephone(self.identity, ring_time=self.ring_time, wait_time=self.wait_time)
         self.telephone.set_ringing_callback(self.ringing)
         self.telephone.set_established_callback(self.call_established)
         self.telephone.set_ended_callback(self.call_ended)
@@ -55,6 +57,10 @@ class ReticulumTelephone():
         self.identitypath = self.configdir+"/identity"
         self.storagedir   = self.configdir+"/storage"
 
+        self.ring_time    = ReticulumTelephone.RING_TIME
+        self.wait_time    = ReticulumTelephone.WAIT_TIME
+        self.path_time    = ReticulumTelephone.PATH_TIME
+
         if not os.path.isdir(self.storagedir):
             os.makedirs(self.storagedir)
 
@@ -78,7 +84,6 @@ class ReticulumTelephone():
                 self.identity = RNS.Identity.from_file(self.identitypath)
                 if self.identity != None:
                     pass
-                    # RNS.log("Loaded Primary Identity %s" % (str(self.identity)), RNS.LOG_DEBUG)
                 else:
                     RNS.log("Could not load the Primary Identity from "+self.identitypath, RNS.LOG_ERROR)
                     exit(1)
@@ -129,17 +134,22 @@ class ReticulumTelephone():
         print(f"Calling {RNS.prettyhexrep(remote_identity.hash)}...")
         self.state = self.STATE_CONNECTING
         self.caller = remote_identity
+        self.direction = "to"
         self.telephone.call(self.caller)
 
     def ringing(self, remote_identity):
         self.state = self.STATE_RINGING
         self.caller  = remote_identity
+        self.direction = "from" if self.direction == None else "to"
         print(f"\n\nIncoming call from {RNS.prettyhexrep(self.caller.hash)}")
         print(f"Hit enter to answer, {Terminal.BOLD}r{Terminal.END} to reject")
 
     def call_ended(self, remote_identity):
         if self.is_in_call or self.is_ringing or self.call_is_connecting:
-            print(f"Call with {RNS.prettyhexrep(self.caller.hash)} ended\n")
+            if self.is_in_call:         print(f"Call with {RNS.prettyhexrep(self.caller.hash)} ended\n")
+            if self.is_ringing:         print(f"Call {self.direction} {RNS.prettyhexrep(self.caller.hash)} was not answered\n")
+            if self.call_is_connecting: print(f"Call to {RNS.prettyhexrep(self.caller.hash)} could not be connected\n")
+            self.direction = None
             self.state = self.STATE_AVAILABLE
             self.became_available()
 
@@ -188,7 +198,7 @@ class ReticulumTelephone():
                             RNS.Transport.request_path(destination_hash)
                             def spincheck():
                                 return RNS.Transport.has_path(destination_hash)
-                            self.__spin(spincheck, "Requesting path for call to "+RNS.prettyhexrep(identity_hash), self.call_timeout)
+                            self.__spin(spincheck, "Requesting path for call to "+RNS.prettyhexrep(identity_hash), self.path_time)
                             if not spincheck():
                                 print("Path request timed out")
                                 self.became_available()
