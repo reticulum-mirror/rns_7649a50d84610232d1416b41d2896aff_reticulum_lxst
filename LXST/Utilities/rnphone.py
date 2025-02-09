@@ -23,8 +23,10 @@ class ReticulumTelephone():
         self.should_run   = False
         self.state        = self.STATE_AVAILABLE
         self.last_input   = None
+        self.first_run    = False
         self.call_timeout = self.CALL_TIMEOUT
         self.reload_config()
+        self.main_menu()
         
         reticulum       = RNS.Reticulum(configdir=rnsconfigdir, loglevel=3+verbosity)
         self.telephone  = Telephone(self.identity)
@@ -57,10 +59,8 @@ class ReticulumTelephone():
             os.makedirs(self.storagedir)
 
         if not os.path.isfile(self.configpath):
-            print("Could not load config file, creating default configuration file...")
             self.create_default_config()
-            print("Default config file created. Make any necessary changes in "+self.configpath+" and restart rnphone if needed.")
-            time.sleep(1.5)
+            self.first_run = True
 
         if os.path.isfile(self.configpath):
             try:
@@ -135,7 +135,7 @@ class ReticulumTelephone():
         self.state = self.STATE_RINGING
         self.caller  = remote_identity
         print(f"\n\nIncoming call from {RNS.prettyhexrep(self.caller.hash)}")
-        print(f"Hit enter to answer")
+        print(f"Hit enter to answer, {Terminal.BOLD}r{Terminal.END} to reject")
 
     def call_ended(self, remote_identity):
         if self.is_in_call or self.is_ringing or self.call_is_connecting:
@@ -150,13 +150,34 @@ class ReticulumTelephone():
             self.state = self.STATE_IN_CALL
 
     def became_available(self):
-        if self.is_available:
-            print("Enter identity hash and hit enter to call\n> ", end="")
+        if self.is_available and self.first_run:
+            hs = ""
+            if not hasattr(self, "first_prompt"): hs = " (or ? for help)"; self.first_prompt = True
+            print(f"Enter identity hash and hit enter to call{hs}\n", end="")
+        print("> ", end="")
+        sys.stdout.flush()
+
+    def main_menu(self):
+        def m_help(argv):
+            print("")
+            print(f"{Terminal.UNDERLINE}Available commands{Terminal.END}")
+            print(f"  {Terminal.BOLD}q{Terminal.END}uit  : Exit the program")
+            print(f"  {Terminal.BOLD}h{Terminal.END}elp  : This help menu")
+            print("")
+        
+        def m_quit(argv):
+            exit(0)
+
+        self.active_menu = {"help": m_help,
+                            "h": m_help,
+                            "?": m_help,
+                            "exit": m_quit,
+                            "quit": m_quit,
+                            "q": m_quit}
 
     def run(self):
-        print(f"Reticulum Telephone is ready")
+        print(f"\n{Terminal.BOLD}Reticulum Telephone Utility is ready{Terminal.END}")
         print(f"  Identity hash: {RNS.prettyhexrep(self.identity.hash)}\n")
-        self.became_available()
         while self.should_run:
             if self.is_available:
                 if self.last_input and len(self.last_input) == RNS.Reticulum.TRUNCATED_HASHLENGTH//8*2:
@@ -167,8 +188,7 @@ class ReticulumTelephone():
                             RNS.Transport.request_path(destination_hash)
                             def spincheck():
                                 return RNS.Transport.has_path(destination_hash)
-                            self.__spin(spincheck, "Requesting path for call to "+RNS.prettyhexrep(destination_hash), self.call_timeout)
-
+                            self.__spin(spincheck, "Requesting path for call to "+RNS.prettyhexrep(identity_hash), self.call_timeout)
                             if not spincheck():
                                 print("Path request timed out")
                                 self.became_available()
@@ -181,17 +201,27 @@ class ReticulumTelephone():
                         print(f"Invalid identity hash: {e}\n")
                         RNS.trace_exception(e)
 
+                elif self.last_input and self.last_input.split(" ")[0] in self.active_menu:
+                    self.active_menu[self.last_input.split(" ")[0]](self.last_input.split(" ")[1:])
+                    self.became_available()
+
+                else:
+                    self.became_available()
+
             elif self.is_ringing:
-                print(f"Answering call from {RNS.prettyhexrep(self.caller.hash)}")
-                if not self.telephone.answer(self.caller):
-                    print(f"Could not answer call from {RNS.prettyhexrep(self.caller.hash)}")
+                if self.last_input == "":
+                    print(f"Answering call from {RNS.prettyhexrep(self.caller.hash)}")
+                    if not self.telephone.answer(self.caller):
+                        print(f"Could not answer call from {RNS.prettyhexrep(self.caller.hash)}")
+                else:
+                    print(f"Rejecting call from {RNS.prettyhexrep(self.caller.hash)}")
+                    self.telephone.hangup()
 
             elif self.is_in_call or self.call_is_connecting:
                 print(f"Hanging up call with {RNS.prettyhexrep(self.caller.hash)}")
                 self.telephone.hangup()
 
             self.last_input = input()
-
 
     def __spin(self, until=None, msg=None, timeout=None):
         i = 0
@@ -236,6 +266,11 @@ __default_rnphone_config__ = """# This is an example rnphone config file.
 # You should probably edit it to suit your
 # intended usage.
 """
+
+class Terminal():
+    UNDERLINE = "\033[4m"
+    BOLD = "\033[1m"
+    END = "\033[0m"
 
 if __name__ == "__main__":
     main()
