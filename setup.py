@@ -5,6 +5,13 @@ with open("README.md", "r") as fh:
 
 exec(open("LXST/_version.py", "r").read())
 
+packages = setuptools.find_packages(exclude=[])
+packages.append("LXST.Utilities")
+packages.append("LXST.Codecs.libs.pydub")
+packages.append("LXST.Codecs.libs.pyogg")
+print("Packages:")
+print(packages)
+
 setuptools.setup(
     name="lxst",
     version=__version__,
@@ -14,7 +21,7 @@ setuptools.setup(
     long_description=long_description,
     long_description_content_type="text/markdown",
     url="https://github.com/markqvist/lxst",
-    packages=["LXST", "LXST.Utilities"],
+    packages=packages,
     classifiers=[
         "Programming Language :: Python :: 3",
         "License :: Other/Proprietary License",
