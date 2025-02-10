@@ -56,12 +56,6 @@ class Packetizer(RemoteSink):
         self.transmit_failure = False
         self.__failure_calback = failure_callback
 
-        # TODO: Remove testing
-        # self.frames = 0
-        # self.frame_bytes = 0
-        # self.total_bytes = 0
-        # self.overhead_bytes = 0
-
     def handle_frame(self, frame, source=None):
         if type(self.destination) == RNS.Link and not self.destination.status == RNS.Link.ACTIVE:
             return
@@ -75,6 +69,12 @@ class Packetizer(RemoteSink):
             if callable(self.__failure_calback): self.__failure_calback()
 
         # TODO: Remove testing
+        # if not hasattr(self, "frames"):
+        #     self.frames = 0
+        #     self.frame_bytes = 0
+        #     self.total_bytes = 0
+        #     self.total_bytes = 0
+        #     self.overhead_bytes = 0
         # self.frames += 1
         # self.frame_bytes += len(frame)
         # self.total_bytes += len(frame_packet.raw)

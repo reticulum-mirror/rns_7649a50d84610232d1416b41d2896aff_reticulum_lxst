@@ -191,25 +191,28 @@ class ReticulumTelephone():
         while self.should_run:
             if self.is_available:
                 if self.last_input and len(self.last_input) == RNS.Reticulum.TRUNCATED_HASHLENGTH//8*2:
-                    try:
-                        identity_hash = bytes.fromhex(self.last_input)
-                        destination_hash = RNS.Destination.hash_from_name_and_identity("lxst.telephony", identity_hash)
-                        if not RNS.Transport.has_path(destination_hash):
-                            RNS.Transport.request_path(destination_hash)
-                            def spincheck():
-                                return RNS.Transport.has_path(destination_hash)
-                            self.__spin(spincheck, "Requesting path for call to "+RNS.prettyhexrep(identity_hash), self.path_time)
-                            if not spincheck():
-                                print("Path request timed out")
-                                self.became_available()
-                            
-                        if RNS.Transport.has_path(destination_hash):
-                            identity = RNS.Identity.recall(destination_hash)
-                            self.call(identity)
+                    if self.is_available:
+                        try:
+                            self.telephone.set_busy(True)
+                            identity_hash = bytes.fromhex(self.last_input)
+                            destination_hash = RNS.Destination.hash_from_name_and_identity("lxst.telephony", identity_hash)
+                            if not RNS.Transport.has_path(destination_hash):
+                                RNS.Transport.request_path(destination_hash)
+                                def spincheck():
+                                    return RNS.Transport.has_path(destination_hash)
+                                self.__spin(spincheck, "Requesting path for call to "+RNS.prettyhexrep(identity_hash), self.path_time)
+                                if not spincheck():
+                                    print("Path request timed out")
+                                    self.became_available()
 
-                    except Exception as e:
-                        print(f"Invalid identity hash: {e}\n")
-                        RNS.trace_exception(e)
+                            self.telephone.set_busy(False)
+                            if RNS.Transport.has_path(destination_hash):
+                                identity = RNS.Identity.recall(destination_hash)
+                                self.call(identity)
+
+                        except Exception as e:
+                            print(f"Invalid identity hash: {e}\n")
+                            RNS.trace_exception(e)
 
                 elif self.last_input and self.last_input.split(" ")[0] in self.active_menu:
                     self.active_menu[self.last_input.split(" ")[0]](self.last_input.split(" ")[1:])
