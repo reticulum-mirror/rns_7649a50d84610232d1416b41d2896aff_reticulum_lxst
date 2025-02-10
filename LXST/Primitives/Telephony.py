@@ -90,6 +90,7 @@ class Telephone(SignallingReceiver):
 
             if self.active_call == call and self.call_status < Signalling.STATUS_ESTABLISHED:
                 RNS.log(f"Ring timeout on call from {RNS.prettyhexrep(self.active_call.hash)}, hanging up", RNS.LOG_DEBUG)
+                self.active_call.ring_timeout = True
                 self.hangup()
 
         threading.Thread(target=job, daemon=True).start()
@@ -106,8 +107,9 @@ class Telephone(SignallingReceiver):
         threading.Thread(target=job, daemon=True).start()
 
     def __incoming_link_established(self, link):
-        link.is_incoming = True
-        link.is_outgoing = False
+        link.is_incoming  = True
+        link.is_outgoing  = False
+        link.ring_timeout = False
         with self.call_handler_lock:
             if self.active_call or self.busy:
                 RNS.log(f"Incoming call, but line is already active, signalling busy", RNS.LOG_DEBUG)
@@ -185,10 +187,12 @@ class Telephone(SignallingReceiver):
             with self.call_handler_lock:
                 terminating_call = self.active_call; self.active_call = None
                 remote_identity = terminating_call.get_remote_identity()
+                
                 if terminating_call.is_incoming and self.call_status == Signalling.STATUS_RINGING:
-                    self.signal(Signalling.STATUS_REJECTED, terminating_call)
-                if terminating_call.status == RNS.Link.ACTIVE:
-                    terminating_call.teardown()
+                    if not terminating_call.ring_timeout and terminating_call.status == RNS.Link.ACTIVE:
+                        self.signal(Signalling.STATUS_REJECTED, terminating_call)
+                
+                if terminating_call.status == RNS.Link.ACTIVE: terminating_call.teardown()
                 self.__stop_pipelines()
                 self.receive_mixer = None
                 self.transmit_mixer = None
@@ -211,8 +215,21 @@ class Telephone(SignallingReceiver):
         pass
 
     def select_call_codecs(self):
-        self.transmit_codec = Opus(profile=Opus.PROFILE_VOICE_MEDIUM)
         self.receive_codec = Null()
+        
+        # self.transmit_codec = Codec2(mode=Codec2.CODEC2_700C)
+        # self.transmit_codec = Codec2(mode=Codec2.CODEC2_1600)
+        # self.transmit_codec = Codec2(mode=Codec2.CODEC2_3200)
+        # self.transmit_codec = Opus(profile=Opus.PROFILE_VOICE_LOW)
+        # self.transmit_codec = Opus(profile=Opus.PROFILE_VOICE_MEDIUM)
+        self.transmit_codec = Opus(profile=Opus.PROFILE_VOICE_HIGH)
+        # self.transmit_codec = Opus(profile=Opus.PROFILE_VOICE_MAX)
+        # self.transmit_codec = Opus(profile=Opus.PROFILE_AUDIO_MIN)
+        # self.transmit_codec = Opus(profile=Opus.PROFILE_AUDIO_LOW)
+        # self.transmit_codec = Opus(profile=Opus.PROFILE_AUDIO_MEDIUM)
+        # self.transmit_codec = Opus(profile=Opus.PROFILE_AUDIO_HIGH)
+        # self.transmit_codec = Opus(profile=Opus.PROFILE_AUDIO_MAX)
+        # self.transmit_codec = Raw()
 
     def select_call_frame_time(self):
         self.target_frame_time_ms = 60
@@ -258,7 +275,7 @@ class Telephone(SignallingReceiver):
             started = time.time()
             while self.active_call and self.active_call.is_outgoing and self.call_status == Signalling.STATUS_RINGING:
                 elapsed = (time.time()-started)%window
-                if elapsed > 0.5 and elapsed < 2.5: self.__enable_dial_tone()
+                if elapsed > 0.05 and elapsed < 2.05: self.__enable_dial_tone()
                 else: self.__mute_dial_tone()
                 time.sleep(0.2)
 
@@ -342,8 +359,9 @@ class Telephone(SignallingReceiver):
                                                 established_callback=self.__outgoing_link_established,
                                                 closed_callback=self.__outgoing_link_closed)
                     
-                    self.active_call.is_incoming = False
-                    self.active_call.is_outgoing = True
+                    self.active_call.is_incoming  = False
+                    self.active_call.is_outgoing  = True
+                    self.active_call.ring_timeout = False
                     self.__timeout_outgoing_call_at(self.active_call, outgoing_call_timeout)
 
     def __outgoing_link_established(self, link):

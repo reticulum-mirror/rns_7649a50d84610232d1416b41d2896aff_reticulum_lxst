@@ -27,6 +27,8 @@ class Opus(Codec):
         self.frame_max_ms    = self.FRAME_MAX_MS
         self.valid_frame_ms  = self.VALID_FRAME_MS
         self.channels = 1
+        self.input_channels = 1
+        self.output_channels = 2
         self.bitdepth = 16
         self.opus_encoder = OpusEncoder()
         self.opus_decoder = OpusDecoder()
@@ -42,46 +44,55 @@ class Opus(Codec):
         if profile == self.PROFILE_VOICE_LOW:
             self.profile = profile
             self.channels = 1
+            self.input_channels = self.channels
             self.output_samplerate = 8000
             self.opus_encoder.set_application("voip")
         elif profile == self.PROFILE_VOICE_MEDIUM:
             self.profile = profile
             self.channels = 1
+            self.input_channels = self.channels
             self.output_samplerate = 24000
             self.opus_encoder.set_application("voip")
         elif profile == self.PROFILE_VOICE_HIGH:
             self.profile = profile
             self.channels = 1
+            self.input_channels = self.channels
             self.output_samplerate = 48000
             self.opus_encoder.set_application("voip")
         elif profile == self.PROFILE_VOICE_MAX:
             self.profile = profile
             self.channels = 2
+            self.input_channels = self.channels
             self.output_samplerate = 48000
             self.opus_encoder.set_application("voip")
         elif profile == self.PROFILE_AUDIO_MIN:
             self.profile = profile
             self.channels = 1
+            self.input_channels = self.channels
             self.output_samplerate = 8000
             self.opus_encoder.set_application("audio")
         elif profile == self.PROFILE_AUDIO_LOW:
             self.profile = profile
             self.channels = 1
+            self.input_channels = self.channels
             self.output_samplerate = 12000
             self.opus_encoder.set_application("audio")
         elif profile == self.PROFILE_AUDIO_MEDIUM:
             self.profile = profile
             self.channels = 2
+            self.input_channels = self.channels
             self.output_samplerate = 24000
             self.opus_encoder.set_application("audio")
         elif profile == self.PROFILE_AUDIO_HIGH:
             self.profile = profile
             self.channels = 2
+            self.input_channels = self.channels
             self.output_samplerate = 48000
             self.opus_encoder.set_application("audio")
         elif profile == self.PROFILE_AUDIO_MAX:
             self.profile = profile
             self.channels = 2
+            self.input_channels = self.channels
             self.output_samplerate = 48000
             self.opus_encoder.set_application("audio")
         else:
@@ -114,25 +125,31 @@ class Opus(Codec):
     def encode(self, frame):
         if frame.shape[1] == 0:
             raise CodecError("Cannot encode frame with 0 channels")
-        elif frame.shape[1] > self.channels:
-            frame = frame[:, 0:self.channels]
+        elif frame.shape[1] > self.input_channels:
+            frame = frame[:, 0:self.input_channels]
+        elif frame.shape[1] < self.input_channels:
+            new_frame = np.zeros(shape=(frame.shape[0], self.input_channels))
+            for n in range(0, frame.shape[1]): new_frame[:, n] = frame[:, n]
+            for n in range(frame.shape[1], new_frame.shape[1]): new_frame[:, n] = frame[:, frame.shape[1]-1]
+            frame = new_frame
 
         input_samples = frame*self.TYPE_MAP_FACTOR
         input_samples = input_samples.astype(np.int16)
 
         if self.source.samplerate != self.output_samplerate:
             frame_bytes = input_samples.tobytes()
-            resampled_bytes = resample_bytes(frame_bytes, self.bitdepth, self.channels, self.source.samplerate, self.output_samplerate)
+            resampled_bytes = resample_bytes(frame_bytes, self.bitdepth, self.input_channels, self.source.samplerate, self.output_samplerate)
             input_samples = np.frombuffer(resampled_bytes, dtype=np.int16)
-            input_samples = input_samples.reshape(len(input_samples)//self.channels, self.channels)
+            input_samples = input_samples.reshape(len(input_samples)//self.input_channels, self.input_channels)
 
         frame_duration_ms = (input_samples.shape[0]/self.output_samplerate)*1000
         self.update_bitrate(frame_duration_ms)
 
         if not self.encoder_configured:
+            self.input_channels = self.channels
             self.opus_encoder.set_sampling_frequency(self.output_samplerate)
-            self.opus_encoder.set_channels(self.channels)
-            RNS.log(f"{self} encoder set to {self.channels} channels, {RNS.prettyfrequency(self.output_samplerate)}", RNS.LOG_DEBUG)
+            self.opus_encoder.set_channels(self.input_channels)
+            RNS.log(f"{self} encoder set to {self.input_channels} channels, {RNS.prettyfrequency(self.output_samplerate)}", RNS.LOG_DEBUG)
             self.encoder_configured = True
 
         input_bytes = input_samples.tobytes()
@@ -147,7 +164,10 @@ class Opus(Codec):
 
     def decode(self, frame_bytes):
         if not self.decoder_configured:
-            self.opus_decoder.set_channels(self.channels)
+            if self.sink and self.sink.channels: output_channels = self.sink.channels
+            else: output_channels = self.output_channels if self.output_channels > self.channels else self.channels
+            self.channels = output_channels
+            self.opus_decoder.set_channels(output_channels)
             self.opus_decoder.set_sampling_frequency(self.sink.samplerate)
             self.decoder_configured = True
             RNS.log(f"{self} decoder set to {self.channels} channels, {RNS.prettyfrequency(self.sink.samplerate)}", RNS.LOG_DEBUG)

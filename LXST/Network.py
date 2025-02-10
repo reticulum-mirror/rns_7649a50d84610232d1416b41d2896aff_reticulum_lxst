@@ -123,10 +123,13 @@ class LinkSource(RemoteSource, SignallingReceiver):
                                     RNS.log(f"Remote switched codec to {frame_codec}", RNS.LOG_DEBUG)
                                     if self.pipeline: self.pipeline.codec = frame_codec()
                                     else: self.codec = frame_codec(); self.codec.sink = self.sink
+                                    decoded_frame = self.codec.decode(frame[1:])
                                     if self.codec.channels: self.channels = self.codec.channels
+                                else:
+                                    decoded_frame = self.codec.decode(frame[1:])
 
                                 if self.pipeline:
-                                    self.sink.handle_frame(self.codec.decode(frame[1:]), self)
+                                    self.sink.handle_frame(decoded_frame, self)
                                 else:
                                     self.sink.handle_frame(frame[1:], self)
 

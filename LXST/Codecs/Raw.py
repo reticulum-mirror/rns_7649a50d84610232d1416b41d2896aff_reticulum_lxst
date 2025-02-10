@@ -53,5 +53,6 @@ class Raw(Codec):
         frame_dtype    = self.BITDEPTHS[frame_bitdepth]
         frame_samples  = np.frombuffer(frame_bytes[1:], dtype=frame_dtype)
         frame_samples  = frame_samples.reshape(len(frame_samples)//frame_channels, frame_channels)
+        if not self.channels: self.channels = frame_channels
 
         return frame_samples

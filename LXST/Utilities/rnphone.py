@@ -166,11 +166,14 @@ class ReticulumTelephone():
             erase_str = ""
             while self.state == self.STATE_IN_CALL:
                 elapsed      = round(time.time()-started)
-                stat_string  = "{elapsed}. Hit enter to hang up."
-                print(f"\r{erase_str}", end="")
+                stat_string  = f"In call for {RNS.prettytime(elapsed)}, hit enter to hang up "
                 print(f"\r{stat_string}", end="")
                 erase_string = " "*len(stat_string)
                 sys.stdout.flush()
+                time.sleep(0.25)
+                print(f"\r{erase_str}", end="")
+            print(f"\r{erase_str}> ", end="")
+
         threading.Thread(target=job, daemon=True).start()
 
     def became_available(self):
