@@ -16,7 +16,7 @@ class ToneSource(LocalSource):
     DEFAULT_FREQUENCY  = 400
     EASE_TIME_MS       = 20
 
-    def __init__(self, frequency=DEFAULT_FREQUENCY, ease=True, ease_time_ms=EASE_TIME_MS,
+    def __init__(self, frequency=DEFAULT_FREQUENCY, gain=0.1, ease=True, ease_time_ms=EASE_TIME_MS,
                  target_frame_ms=DEFAULT_FRAME_MS, codec=None, sink=None, channels=1):
 
         self.target_frame_ms = target_frame_ms
@@ -24,7 +24,7 @@ class ToneSource(LocalSource):
         self.channels        = channels
         self.bitdepth        = 32
         self.frequency       = frequency
-        self._gain           = 0.1
+        self._gain           = gain
         self.gain            = self._gain
         self.ease            = ease
         self.theta           = 0

@@ -25,8 +25,10 @@ class Signalling():
                           STATUS_CONNECTING, STATUS_ESTABLISHED]
 
 class Telephone(SignallingReceiver):
-    RING_TIME          = 60
-    WAIT_TIME          = 70
+    RING_TIME           = 60
+    WAIT_TIME           = 70
+    DIAL_TONE_FREQUENCY = 382
+    DIAL_TONE_EASE_MS   = 3.14159
 
     def __init__(self, identity, ring_time=RING_TIME, wait_time=WAIT_TIME, auto_answer=None):
         super().__init__()
@@ -50,6 +52,8 @@ class Telephone(SignallingReceiver):
         self.audio_output = None
         self.audio_input = None
         self.dial_tone = None
+        self.dial_tone_frequency = self.DIAL_TONE_FREQUENCY
+        self.dial_tone_ease_ms = self.DIAL_TONE_EASE_MS
         self.transmit_codec = None
         self.receive_codec = None
         self.receive_mixer = None
@@ -181,6 +185,8 @@ class Telephone(SignallingReceiver):
             with self.call_handler_lock:
                 terminating_call = self.active_call; self.active_call = None
                 remote_identity = terminating_call.get_remote_identity()
+                if terminating_call.is_incoming and self.call_status == Signalling.STATUS_RINGING:
+                    self.signal(Signalling.STATUS_REJECTED, terminating_call)
                 if terminating_call.status == RNS.Link.ACTIVE:
                     terminating_call.teardown()
                 self.__stop_pipelines()
@@ -229,11 +235,22 @@ class Telephone(SignallingReceiver):
         self.select_call_codecs()
         if self.audio_output == None:     self.audio_output = LineSink()
         if self.receive_mixer == None:    self.receive_mixer = Mixer(target_frame_ms=self.target_frame_time_ms)
-        if self.dial_tone == None:        self.dial_tone = ToneSource(frequency=382, ease_time_ms=3.14159, target_frame_ms=self.target_frame_time_ms, codec=Null(), sink=self.receive_mixer)
+        if self.dial_tone == None:        self.dial_tone = ToneSource(frequency=self.dial_tone_frequency, gain=0.0, ease_time_ms=self.dial_tone_ease_ms, target_frame_ms=self.target_frame_time_ms, codec=Null(), sink=self.receive_mixer)
         if self.receive_pipeline == None: self.receive_pipeline = LXST.Pipeline(source=self.receive_mixer, codec=Null(), sink=self.audio_output)
 
     def __activate_ring_tone(self):
         pass
+
+    def __play_busy_tone(self):
+        if self.audio_output == None or self.receive_mixer == None or self.dial_tone == None: self.__reset_dialling_pipelines()
+        with self.pipeline_lock:
+            window = 0.5; started = time.time()
+            while time.time()-started < 4.25:
+                elapsed = (time.time()-started)%window
+                if elapsed > 0.25: self.__enable_dial_tone()
+                else: self.__mute_dial_tone()
+                time.sleep(0.005)
+            time.sleep(0.5)
 
     def __activate_dial_tone(self):
         def job():
@@ -241,7 +258,7 @@ class Telephone(SignallingReceiver):
             started = time.time()
             while self.active_call and self.active_call.is_outgoing and self.call_status == Signalling.STATUS_RINGING:
                 elapsed = (time.time()-started)%window
-                if elapsed <= 2: self.__enable_dial_tone()
+                if elapsed > 0.5 and elapsed < 2.5: self.__enable_dial_tone()
                 else: self.__mute_dial_tone()
                 time.sleep(0.2)
 
@@ -250,12 +267,12 @@ class Telephone(SignallingReceiver):
     def __enable_dial_tone(self):
         if not self.receive_mixer.should_run: self.receive_mixer.start()
         self.dial_tone.gain = 0.04
-        if not self.dial_tone.running:
-            self.dial_tone.start()
+        if not self.dial_tone.running: self.dial_tone.start()
 
     def __mute_dial_tone(self):
-        if self.dial_tone.running and self.dial_tone.gain != 0:
-            self.dial_tone.gain = 0.0
+        if not self.receive_mixer.should_run: self.receive_mixer.start()
+        if self.dial_tone.running and self.dial_tone.gain != 0: self.dial_tone.gain = 0.0
+        if not self.dial_tone.running: self.dial_tone.start()
     
     def __disable_dial_tone(self):
         if self.dial_tone and self.dial_tone.running:
@@ -344,10 +361,12 @@ class Telephone(SignallingReceiver):
             else:
                 if signal == Signalling.STATUS_BUSY:
                     RNS.log("Remote is busy, terminating", RNS.LOG_DEBUG)
+                    self.__play_busy_tone()
                     self.__disable_dial_tone()
                     self.hangup()
                 elif signal == Signalling.STATUS_REJECTED:
                     RNS.log("Remote rejected call, terminating", RNS.LOG_DEBUG)
+                    self.__play_busy_tone()
                     self.__disable_dial_tone()
                     self.hangup()
                 elif signal == Signalling.STATUS_AVAILABLE:
