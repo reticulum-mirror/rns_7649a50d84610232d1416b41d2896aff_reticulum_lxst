@@ -4,6 +4,7 @@ import RNS
 import os
 import sys
 import time
+import threading
 import argparse
 
 from LXST._version import __version__
@@ -155,9 +156,22 @@ class ReticulumTelephone():
 
     def call_established(self, remote_identity):
         if self.call_is_connecting or self.is_ringing:
-            print(f"Call established with {RNS.prettyhexrep(self.caller.hash)}")
-            print(f"Hit enter to hang up")
             self.state = self.STATE_IN_CALL
+            print(f"Call established with {RNS.prettyhexrep(self.caller.hash)}")
+            self.display_call_status()
+
+    def display_call_status(self):
+        def job():
+            started = time.time()
+            erase_str = ""
+            while self.state == self.STATE_IN_CALL:
+                elapsed      = round(time.time()-started)
+                stat_string  = "{elapsed}. Hit enter to hang up."
+                print(f"\r{erase_str}", end="")
+                print(f"\r{stat_string}", end="")
+                erase_string = " "*len(stat_string)
+                sys.stdout.flush()
+        threading.Thread(target=job, daemon=True).start()
 
     def became_available(self):
         if self.is_available and self.first_run:
