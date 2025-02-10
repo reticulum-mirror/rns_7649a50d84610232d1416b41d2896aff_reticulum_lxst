@@ -25,8 +25,8 @@ class Signalling():
                           STATUS_RINGING, STATUS_CONNECTING, STATUS_ESTABLISHED]
 
 class Telephone(SignallingReceiver):
-    RING_TIME          = 30
-    WAIT_TIME          = 60
+    RING_TIME          = 60
+    WAIT_TIME          = 70
 
     def __init__(self, identity, ring_time=RING_TIME, wait_time=WAIT_TIME, auto_answer=None):
         super().__init__()
@@ -190,6 +190,13 @@ class Telephone(SignallingReceiver):
         self.target_frame_time_ms = 60
         return self.target_frame_time_ms
 
+    def __reset_dialling_pipelines(self):
+        self.audio_output.stop(); self.audio_output = None
+        self.dial_tone.stop(); self.dial_tone = None
+        self.receive_pipeline.stop(); self.receive_pipeline = None
+        self.receive_mixer.stop(); self.receive_mixer = None
+        self.__prepare_dialling_pipelines()
+
     def __prepare_dialling_pipelines(self):
         self.select_call_frame_time()
         self.select_call_codecs()
@@ -326,8 +333,9 @@ class Telephone(SignallingReceiver):
                 elif signal == Signalling.STATUS_CONNECTING:
                     RNS.log("Call answered, remote is performing call setup, opening audio pipelines", RNS.LOG_DEBUG)
                     self.call_status = signal
-                    self.__open_pipelines(self.active_call.get_remote_identity())
                     self.__disable_dial_tone()
+                    self.__reset_dialling_pipelines()
+                    self.__open_pipelines(self.active_call.get_remote_identity())
                 elif signal == Signalling.STATUS_ESTABLISHED:
                     if self.active_call and self.active_call.is_outgoing:
                         RNS.log("Remote call setup completed, starting audio pipelines", RNS.LOG_DEBUG)
