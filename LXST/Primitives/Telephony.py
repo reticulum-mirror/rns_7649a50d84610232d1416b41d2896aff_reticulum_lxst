@@ -26,7 +26,7 @@ class Signalling():
 
 class Telephone(SignallingReceiver):
     RING_TIME          = 30
-    WAIT_TIME          = 30
+    WAIT_TIME          = 60
 
     def __init__(self, identity, ring_time=RING_TIME, wait_time=WAIT_TIME, auto_answer=None):
         super().__init__()
