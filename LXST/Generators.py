@@ -104,6 +104,7 @@ class ToneSource(LocalSource):
                     self.ease_gain -= self.ease_step
                     if self.ease_gain <= 0.0:
                         self.ease_gain = 0.0
+                        self.easing_out = False
                         self.should_run = False
 
         return frame_samples

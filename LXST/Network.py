@@ -3,7 +3,7 @@ import time
 import threading
 from .Sinks import RemoteSink
 from .Sources import RemoteSource
-from .Codecs import codec_header_byte, codec_type
+from .Codecs import Null, codec_header_byte, codec_type
 from collections import deque
 from RNS.vendor import umsgpack as mp
 
@@ -98,9 +98,12 @@ class Packetizer(RemoteSink):
         self.should_run = False
 
 class LinkSource(RemoteSource, SignallingReceiver):
-    def __init__(self, link, signalling_receiver):
+    def __init__(self, link, signalling_receiver, sink=None):
         self.should_run   = False
         self.link         = link
+        self.sink         = sink
+        self.codec        = Null()
+        self.pipeline     = None
         self.proxy        = signalling_receiver
         self.receive_lock = threading.Lock()
         self.link.set_packet_callback(self._packet)
@@ -118,9 +121,14 @@ class LinkSource(RemoteSource, SignallingReceiver):
                             if self.codec and self.sink:
                                 if type(self.codec) != frame_codec:
                                     RNS.log(f"Remote switched codec to {frame_codec}", RNS.LOG_DEBUG)
-                                    self.pipeline.codec = frame_codec()
+                                    if self.pipeline: self.pipeline.codec = frame_codec()
+                                    else: self.codec = frame_codec(); self.codec.sink = self.sink
+                                    if self.codec.channels: self.channels = self.codec.channels
 
-                                self.sink.handle_frame(self.codec.decode(frame[1:]), self)
+                                if self.pipeline:
+                                    self.sink.handle_frame(self.codec.decode(frame[1:]), self)
+                                else:
+                                    self.sink.handle_frame(frame[1:], self)
 
                     if FIELD_SIGNALLING in unpacked:
                         super()._packet(data=None, packet=packet, unpacked=unpacked)

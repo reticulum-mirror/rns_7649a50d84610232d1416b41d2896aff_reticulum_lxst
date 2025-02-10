@@ -1,6 +1,7 @@
 from .Sources import *
 from .Sinks   import *
 from .Codecs  import *
+from .Mixer   import Mixer
 from .Network import Packetizer
 
 class PipelineError(Exception):
