@@ -24,15 +24,17 @@ class ToneSource(LocalSource):
         self.channels        = channels
         self.bitdepth        = 32
         self.frequency       = frequency
-        self.gain            = 0.1
+        self._gain           = 0.1
+        self.gain            = self._gain
         self.ease            = ease
         self.theta           = 0
         self.ease_gain       = 0
         self.ease_time_ms    = ease_time_ms
         self.ease_step       = 0
+        self.gain_step       = 0
         self.easing_out      = False
         self.should_run      = False
-        self.ingest_thread   = None
+        self.generate_thread = None
         self.generate_lock   = threading.Lock()
         self._codec          = None
         self.codec           = codec
@@ -72,14 +74,15 @@ class ToneSource(LocalSource):
             self.samples_per_frame = math.ceil((self.target_frame_ms/1000)*self.samplerate)
             self.frame_time = self.samples_per_frame/self.samplerate
             self.ease_step = 1/(self.samplerate*(self.ease_time_ms/1000))
+            self.gain_step = 0.02/(self.samplerate*(self.ease_time_ms/1000))
 
     def start(self):
         if not self.should_run:
             RNS.log(f"{self} starting at {self.samples_per_frame} samples per frame, {self.channels} channels", RNS.LOG_DEBUG)
             self.ease_gain = 0 if self.ease else 1
             self.should_run = True
-            self.ingest_thread = threading.Thread(target=self.__ingest_job, daemon=True)
-            self.ingest_thread.start()
+            self.generate_thread = threading.Thread(target=self.__generate_job, daemon=True)
+            self.generate_thread.start()
 
     def stop(self):
         if not self.ease:
@@ -87,14 +90,26 @@ class ToneSource(LocalSource):
         else:
             self.easing_out = True
 
+    @property
+    def running(self):
+        return self.should_run and not self.easing_out
+
     def __generate(self):
         frame_samples = np.zeros((self.samples_per_frame, self.channels), dtype="float32")
         step = (self.frequency * 2 * math.pi) / self.samplerate
         for n in range(0, self.samples_per_frame):
             self.theta += step
-            amplitude = math.sin(self.theta)*self.gain*self.ease_gain
+            amplitude = math.sin(self.theta)*self._gain*self.ease_gain
             for c in range(0, self.channels):
                 frame_samples[n, c] = amplitude
+
+            if self.gain > self._gain:
+                self._gain += self.gain_step
+                if self._gain > self.gain: self._gain = self.gain
+
+            if self.gain < self._gain:
+                self._gain -= self.gain_step
+                if self._gain < self.gain: self._gain = self.gain
 
             if self.ease:
                 if self.ease_gain < 1.0 and not self.easing_out:
@@ -109,7 +124,7 @@ class ToneSource(LocalSource):
 
         return frame_samples
 
-    def __ingest_job(self):
+    def __generate_job(self):
         with self.generate_lock:
             while self.should_run:
                 if self.codec and self.sink and self.sink.can_receive(from_source=self):

@@ -174,6 +174,7 @@ class Telephone(SignallingReceiver):
                 self.transmit_mixer = None
                 self.receive_pipeline = None
                 self.transmit_pipeline = None
+                self.call_status = None
                 if remote_identity:
                     RNS.log(f"Call with {RNS.prettyhexrep(remote_identity.hash)} terminated", RNS.LOG_DEBUG)
                 else:
@@ -194,15 +195,34 @@ class Telephone(SignallingReceiver):
         self.select_call_codecs()
         if self.audio_output == None:     self.audio_output = LineSink()
         if self.receive_mixer == None:    self.receive_mixer = Mixer(target_frame_ms=self.target_frame_time_ms)
-        if self.dial_tone == None:        self.dial_tone = ToneSource(frequency=388, ease_time_ms=3.14159, target_frame_ms=self.target_frame_time_ms, codec=Null(), sink=self.receive_mixer)
+        if self.dial_tone == None:        self.dial_tone = ToneSource(frequency=382, ease_time_ms=3.14159, target_frame_ms=self.target_frame_time_ms, codec=Null(), sink=self.receive_mixer)
         if self.receive_pipeline == None: self.receive_pipeline = LXST.Pipeline(source=self.receive_mixer, codec=Null(), sink=self.audio_output)
+
+    def __activate_dial_tone(self):
+        def job():
+            window = 7
+            started = time.time()
+            while self.active_call and self.active_call.is_outgoing and self.call_status == Signalling.STATUS_RINGING:
+                elapsed = (time.time()-started)%window
+                if elapsed <= 2: self.__enable_dial_tone()
+                else: self.__mute_dial_tone()
+                time.sleep(0.2)
+
+        threading.Thread(target=job, daemon=True).start()
 
     def __enable_dial_tone(self):
         if not self.receive_mixer.should_run: self.receive_mixer.start()
-        self.dial_tone.start()
+        self.dial_tone.gain = 0.04
+        if not self.dial_tone.running:
+            self.dial_tone.start()
+
+    def __mute_dial_tone(self):
+        if self.dial_tone.running and self.dial_tone.gain != 0:
+            self.dial_tone.gain = 0.0
     
     def __disable_dial_tone(self):
-        self.dial_tone.stop()
+        if self.dial_tone and self.dial_tone.running:
+            self.dial_tone.stop()
 
     def __open_pipelines(self, identity):
         with self.pipeline_lock:
@@ -302,7 +322,7 @@ class Telephone(SignallingReceiver):
                     self.call_status = signal
                     self.__prepare_dialling_pipelines()
                     if self.active_call and self.active_call.is_outgoing:
-                        self.__enable_dial_tone()
+                        self.__activate_dial_tone()
                 elif signal == Signalling.STATUS_CONNECTING:
                     RNS.log("Call answered, remote is performing call setup, opening audio pipelines", RNS.LOG_DEBUG)
                     self.call_status = signal
