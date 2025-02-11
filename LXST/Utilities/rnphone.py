@@ -33,6 +33,7 @@ class ReticulumTelephone():
         self.speaker_device    = None
         self.microphone_device = None
         self.ringer_device     = None
+        self.phonebook         = {}
         self.reload_config()
         self.main_menu()
         
@@ -120,6 +121,18 @@ class ReticulumTelephone():
             if "microphone" in config: self.microphone_device = config["microphone"]
             if "ringer" in config: self.ringer_device = config["ringer"]
 
+        if "phonebook" in self.config:
+            for name in self.config["phonebook"]:
+                identity_hash = self.config["phonebook"][name]
+                if len(identity_hash) == RNS.Reticulum.TRUNCATED_HASHLENGTH//8*2:
+                    try:
+                        hash_bytes = bytes.fromhex(identity_hash)
+                        self.phonebook[name] = identity_hash
+                    except:
+                        pass
+
+        self.last_dialled_identity_hash = None
+
     @property
     def is_available(self):
         return self.state == self.STATE_AVAILABLE
@@ -144,6 +157,28 @@ class ReticulumTelephone():
 
     def stop(self):
         self.should_run = False
+
+    def dial(self, identity_hash):
+        self.last_dialled_identity_hash = identity_hash
+        self.telephone.set_busy(True)
+        identity_hash = bytes.fromhex(identity_hash)
+        destination_hash = RNS.Destination.hash_from_name_and_identity("lxst.telephony", identity_hash)
+        if not RNS.Transport.has_path(destination_hash):
+            RNS.Transport.request_path(destination_hash)
+            def spincheck():
+                return RNS.Transport.has_path(destination_hash)
+            self.__spin(spincheck, "Requesting path for call to "+RNS.prettyhexrep(identity_hash), self.path_time)
+            if not spincheck():
+                print("Path request timed out")
+                self.became_available()
+
+        self.telephone.set_busy(False)
+        if RNS.Transport.has_path(destination_hash):
+            identity = RNS.Identity.recall(destination_hash)
+            self.call(identity)
+
+    def redial(self, args=None):
+        if self.last_dialled_identity_hash: self.dial(self.last_dialled_identity_hash)
 
     def call(self, remote_identity):
         print(f"Calling {RNS.prettyhexrep(remote_identity.hash)}...")
@@ -198,12 +233,45 @@ class ReticulumTelephone():
         print("> ", end="")
         sys.stdout.flush()
 
-    def main_menu(self):
+    def print_identity(self, args):
+        print(f"Identity hash of this telephone: {RNS.prettyhexrep(self.identity.hash)}\n")
+
+    def phonebook_menu(self, args=None):
+        def exit_menu(args=None):
+            print("Phonebook closed")
+            self.main_menu()
+
+        def dial_factory(identity_hash):
+            def x(args=None): self.dial(identity_hash)
+            return x
+
+        print("")
+        print(f"{Terminal.UNDERLINE}Phonebook{Terminal.END}")
+
+        self.active_menu = {}
+        maxlen = 0; maxnlen = len(str(len(self.phonebook))); n = 0
+        for name in self.phonebook: maxlen = max(maxlen, len(name))
+        for name in self.phonebook:
+            n += 1; identity_hash = self.phonebook[name]
+            spaces = maxlen-len(name); nspaces = maxnlen-len(str(n)); s = " "
+            print(f"  {Terminal.BOLD}{s*nspaces}{n}{Terminal.END} {name}{s*spaces} : <{identity_hash}>")
+            self.active_menu[f"{n}"] = dial_factory(identity_hash)
+
+        print(f"  {Terminal.BOLD}b{Terminal.END}ack{s*(max(0, maxlen+maxnlen-2))}: Back to main menu\n")
+        self.active_menu["b"] = exit_menu
+        self.active_menu["back"] = exit_menu
+        self.active_menu["q"] = exit_menu
+        self.active_menu["quit"] = exit_menu
+
+    def main_menu(self, args=None):
         def m_help(argv):
             print("")
             print(f"{Terminal.UNDERLINE}Available commands{Terminal.END}")
-            print(f"  {Terminal.BOLD}q{Terminal.END}uit  : Exit the program")
-            print(f"  {Terminal.BOLD}h{Terminal.END}elp  : This help menu")
+            print(f"  {Terminal.BOLD}p{Terminal.END}honebook : Open the phonebook")
+            print(f"  {Terminal.BOLD}r{Terminal.END}edial    : Call the last called identity again")
+            print(f"  {Terminal.BOLD}i{Terminal.END}dentity  : Display the identity hash of this telephone")
+            print(f"  {Terminal.BOLD}q{Terminal.END}uit      : Exit the program")
+            print(f"  {Terminal.BOLD}h{Terminal.END}elp      : This help menu")
             print("")
         
         def m_quit(argv):
@@ -212,6 +280,12 @@ class ReticulumTelephone():
         self.active_menu = {"help": m_help,
                             "h": m_help,
                             "?": m_help,
+                            "p": self.phonebook_menu,
+                            "phonebook": self.phonebook_menu,
+                            "r": self.redial,
+                            "i": self.print_identity,
+                            "identity": self.print_identity,
+                            "redial": self.redial,
                             "exit": m_quit,
                             "quit": m_quit,
                             "q": m_quit}
@@ -224,22 +298,7 @@ class ReticulumTelephone():
                 if self.last_input and len(self.last_input) == RNS.Reticulum.TRUNCATED_HASHLENGTH//8*2:
                     if self.is_available:
                         try:
-                            self.telephone.set_busy(True)
-                            identity_hash = bytes.fromhex(self.last_input)
-                            destination_hash = RNS.Destination.hash_from_name_and_identity("lxst.telephony", identity_hash)
-                            if not RNS.Transport.has_path(destination_hash):
-                                RNS.Transport.request_path(destination_hash)
-                                def spincheck():
-                                    return RNS.Transport.has_path(destination_hash)
-                                self.__spin(spincheck, "Requesting path for call to "+RNS.prettyhexrep(identity_hash), self.path_time)
-                                if not spincheck():
-                                    print("Path request timed out")
-                                    self.became_available()
-
-                            self.telephone.set_busy(False)
-                            if RNS.Transport.has_path(destination_hash):
-                                identity = RNS.Identity.recall(destination_hash)
-                                self.call(identity)
+                            self.dial(self.last_input)
 
                         except Exception as e:
                             print(f"Invalid identity hash: {e}\n")
@@ -335,6 +394,14 @@ __default_rnphone_config__ = """# This is an example rnphone config file.
     # speaker = device name
     # microphone = device name
     # ringer = device name
+
+[phonebook]
+    # You can add entries to the phonebook for
+    # quick dialling by adding them here
+
+    # Mary = f3e8c3359b39d36f3baff0a616a73d3e
+    # Jake = b8d80b1b7a9d3147880b366995422a45
+    # Dean = 05d4c6697bb38e5458a3077571157bfa
 """
 
 class Terminal():
