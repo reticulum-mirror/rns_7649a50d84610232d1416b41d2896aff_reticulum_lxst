@@ -22,17 +22,20 @@ class ReticulumTelephone():
     PATH_TIME        = 10
 
     def __init__(self, configdir, rnsconfigdir, verbosity = 0):
-        self.configdir    = configdir
-        self.should_run   = False
-        self.state        = self.STATE_AVAILABLE
-        self.direction    = None
-        self.last_input   = None
-        self.first_run    = False
+        self.configdir     = configdir
+        self.config        = None
+        self.should_run    = False
+        self.state         = self.STATE_AVAILABLE
+        self.direction     = None
+        self.last_input    = None
+        self.first_run     = False
+        self.ringtone_path = None
         self.reload_config()
         self.main_menu()
         
         reticulum       = RNS.Reticulum(configdir=rnsconfigdir, loglevel=3+verbosity)
         self.telephone  = Telephone(self.identity, ring_time=self.ring_time, wait_time=self.wait_time)
+        self.telephone.set_ringtone(self.ringtone_path)
         self.telephone.set_ringing_callback(self.ringing)
         self.telephone.set_established_callback(self.call_established)
         self.telephone.set_ended_callback(self.call_ended)
@@ -71,7 +74,7 @@ class ReticulumTelephone():
 
         if os.path.isfile(self.configpath):
             try:
-                rnphone_config = ConfigObj(self.configpath)
+                self.config = ConfigObj(self.configpath)
             except Exception as e:
                 RNS.log("Could not parse the configuration at "+self.configpath, RNS.LOG_ERROR)
                 RNS.log("Check your configuration file for errors!", RNS.LOG_ERROR)
@@ -104,7 +107,9 @@ class ReticulumTelephone():
                 exit(1)
 
     def apply_config(self):
-        pass
+        if "telephone" in self.config:
+            config = self.config["telephone"]
+            if "ringtone" in config: self.ringtone_path = os.path.join(self.configdir, config["ringtone"])
 
     @property
     def is_available(self):
@@ -295,6 +300,12 @@ def main():
 __default_rnphone_config__ = """# This is an example rnphone config file.
 # You should probably edit it to suit your
 # intended usage.
+
+[telephone]
+    # You can define the ringtone played when the
+    # phone is ringing. Must be in OPUS format, and
+    # located in the rnphone config directory.
+    ringtone = ringtone.opus
 """
 
 class Terminal():

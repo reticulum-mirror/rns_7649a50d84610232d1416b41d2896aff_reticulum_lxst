@@ -1,3 +1,4 @@
+import os
 import RNS
 import LXST
 import time
@@ -7,7 +8,7 @@ from LXST import APP_NAME
 from LXST import Mixer, Pipeline
 from LXST.Codecs import Raw, Opus, Codec2, Null
 from LXST.Sinks import LineSink
-from LXST.Sources import LineSource
+from LXST.Sources import LineSource, OpusFileSource
 from LXST.Generators import ToneSource
 from LXST.Network import SignallingReceiver, Packetizer, LinkSource
 
@@ -49,6 +50,7 @@ class Telephone(SignallingReceiver):
         self.__ringing_callback = None
         self.__established_callback = None
         self.__ended_callback = None
+        self.target_frame_time_ms = None
         self.audio_output = None
         self.audio_input = None
         self.dial_tone = None
@@ -60,7 +62,10 @@ class Telephone(SignallingReceiver):
         self.transmit_mixer = None
         self.receive_pipeline = None
         self.transmit_pipeline = None
-        self.target_frame_time_ms = None
+        self.ringer_lock = threading.Lock()
+        self.ringer_output = None
+        self.ringer_pipeline = None
+        self.ringtone_path = None
 
         self.announce()
         RNS.log(f"{self} listening on {RNS.prettyhexrep(self.destination.hash)}", RNS.LOG_DEBUG)
@@ -82,6 +87,11 @@ class Telephone(SignallingReceiver):
     def set_ended_callback(self, callback):
         if not callable(callback): raise TypeError(f"Invalid callback, {callback} is not callable")
         self.__ended_callback = callback
+
+    def set_ringtone(self, ringtone_path, gain=1.0):
+        self.ringtone_path = ringtone_path
+        self.ringtone_gain = gain
+        RNS.log(f"{self} ringtone set to {self.ringtone_path}", RNS.LOG_DEBUG)
 
     def __timeout_incoming_call_at(self, call, timeout):
         def job():
@@ -131,8 +141,8 @@ class Telephone(SignallingReceiver):
                 RNS.log(f"Caller identified as {RNS.prettyhexrep(identity.hash)}, ringing", RNS.LOG_DEBUG)
                 self.active_call = link
                 self.__reset_dialling_pipelines()
-                self.__activate_ring_tone()
                 self.signal(Signalling.STATUS_RINGING, self.active_call)
+                self.__activate_ring_tone()
                 if callable(self.__ringing_callback): self.__ringing_callback(identity)
                 if self.auto_answer:
                     def cb():
@@ -253,10 +263,23 @@ class Telephone(SignallingReceiver):
         if self.audio_output == None:     self.audio_output = LineSink()
         if self.receive_mixer == None:    self.receive_mixer = Mixer(target_frame_ms=self.target_frame_time_ms)
         if self.dial_tone == None:        self.dial_tone = ToneSource(frequency=self.dial_tone_frequency, gain=0.0, ease_time_ms=self.dial_tone_ease_ms, target_frame_ms=self.target_frame_time_ms, codec=Null(), sink=self.receive_mixer)
-        if self.receive_pipeline == None: self.receive_pipeline = LXST.Pipeline(source=self.receive_mixer, codec=Null(), sink=self.audio_output)
+        if self.receive_pipeline == None: self.receive_pipeline = Pipeline(source=self.receive_mixer, codec=Null(), sink=self.audio_output)
 
     def __activate_ring_tone(self):
-        pass
+        print(f"{self.ringtone_path}")
+        if self.ringtone_path != None and os.path.isfile(self.ringtone_path):
+            if not self.ringer_pipeline:
+                if not self.ringer_output: self.ringer_output = LineSink()
+                self.ringer_source = OpusFileSource(self.ringtone_path, loop=True, target_frame_ms=60)
+                self.ringer_pipeline = Pipeline(source=self.ringer_source, codec=Null(), sink=self.ringer_output)
+
+            def job():
+                with self.ringer_lock:
+                    while self.active_call and self.active_call.is_incoming and self.call_status == Signalling.STATUS_RINGING:
+                        if not self.ringer_pipeline.running: self.ringer_pipeline.start()
+                        time.sleep(0.1)
+                    self.ringer_source.stop()
+            threading.Thread(target=job, daemon=True).start()
 
     def __play_busy_tone(self):
         if self.audio_output == None or self.receive_mixer == None or self.dial_tone == None: self.__reset_dialling_pipelines()
@@ -311,9 +334,9 @@ class Telephone(SignallingReceiver):
                     self.__prepare_dialling_pipelines()
                     self.transmit_mixer = Mixer(target_frame_ms=self.target_frame_time_ms)
                     self.audio_input = LineSource(target_frame_ms=self.target_frame_time_ms, codec=Raw(), sink=self.transmit_mixer)
-                    self.transmit_pipeline = LXST.Pipeline(source=self.transmit_mixer,
-                                                          codec=self.transmit_codec,
-                                                          sink=Packetizer(self.active_call, failure_callback=self.__packetizer_failure))
+                    self.transmit_pipeline = Pipeline(source=self.transmit_mixer,
+                                                      codec=self.transmit_codec,
+                                                      sink=Packetizer(self.active_call, failure_callback=self.__packetizer_failure))
                     
                     self.active_call.audio_source = LinkSource(link=self.active_call, signalling_receiver=self, sink=self.receive_mixer)
                     
