@@ -14,11 +14,12 @@ RNS.loglevel = RNS.LOG_DEBUG
 class LinuxBackend():
     SAMPLERATE = 48000
 
-    def __init__(self, samplerate=SAMPLERATE):
+    def __init__(self, preferred_device=None, samplerate=SAMPLERATE):
         import soundcard
-        self.soundcard  = soundcard
-        self.device     = soundcard.default_microphone()
         self.samplerate = samplerate
+        self.soundcard  = soundcard
+        if preferred_device: self.device = self.soundcard.get_microphone(preferred_device)
+        else:                self.device = self.soundcard.default_microphone()
         self.channels   = self.device.channels
         self.bitdepth   = 32
         RNS.log(f"Using input device {self.device}", RNS.LOG_DEBUG)
@@ -89,18 +90,19 @@ class LineSource(LocalSource):
     MAX_FRAMES       = 128
     DEFAULT_FRAME_MS = 80
 
-    def __init__(self, target_frame_ms=DEFAULT_FRAME_MS, codec=None, sink=None):
-        self.frame_deque     = deque(maxlen=self.MAX_FRAMES)
-        self.target_frame_ms = target_frame_ms
-        self.samplerate      = None
-        self.channels        = None
-        self.bitdepth        = None
-        self.should_run      = False
-        self.ingest_thread   = None
-        self.recording_lock  = threading.Lock()
-        self._codec          = None
-        self.codec           = codec
-        self.sink            = sink
+    def __init__(self, preferred_device=None, target_frame_ms=DEFAULT_FRAME_MS, codec=None, sink=None):
+        self.preferred_device = preferred_device
+        self.frame_deque      = deque(maxlen=self.MAX_FRAMES)
+        self.target_frame_ms  = target_frame_ms
+        self.samplerate       = None
+        self.channels         = None
+        self.bitdepth         = None
+        self.should_run       = False
+        self.ingest_thread    = None
+        self.recording_lock   = threading.Lock()
+        self._codec           = None
+        self.codec            = codec
+        self.sink             = sink
 
     @property
     def codec(self):
@@ -135,7 +137,7 @@ class LineSource(LocalSource):
                     self.target_frame_ms = min(self.codec.valid_frame_ms, key=lambda t:abs(t-self.target_frame_ms))
                     RNS.log(f"{self} target frame time clamped to closest valid value of {self.target_frame_ms}ms ", RNS.LOG_DEBUG)
 
-            self.backend           = Backend(samplerate=self.preferred_samplerate)
+            self.backend           = Backend(preferred_device=self.preferred_device, samplerate=self.preferred_samplerate)
             self.samplerate        = self.backend.samplerate
             self.bitdepth          = self.backend.bitdepth
             self.channels          = self.backend.channels

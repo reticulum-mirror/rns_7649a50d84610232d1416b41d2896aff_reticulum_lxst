@@ -66,6 +66,9 @@ class Telephone(SignallingReceiver):
         self.ringer_output = None
         self.ringer_pipeline = None
         self.ringtone_path = None
+        self.speaker_device = None
+        self.microphone_device = None
+        self.ringer_device = None
 
         self.announce()
         RNS.log(f"{self} listening on {RNS.prettyhexrep(self.destination.hash)}", RNS.LOG_DEBUG)
@@ -87,6 +90,18 @@ class Telephone(SignallingReceiver):
     def set_ended_callback(self, callback):
         if not callable(callback): raise TypeError(f"Invalid callback, {callback} is not callable")
         self.__ended_callback = callback
+
+    def set_speaker(self, device):
+        self.speaker_device = device
+        RNS.log(f"{self} speaker device set to {device}", RNS.LOG_DEBUG)
+
+    def set_microphone(self, device):
+        self.microphone_device = device
+        RNS.log(f"{self} microphone device set to {device}", RNS.LOG_DEBUG)
+
+    def set_ringer(self, device):
+        self.ringer_device = device
+        RNS.log(f"{self} ringer device set to {device}", RNS.LOG_DEBUG)
 
     def set_ringtone(self, ringtone_path, gain=1.0):
         self.ringtone_path = ringtone_path
@@ -260,7 +275,7 @@ class Telephone(SignallingReceiver):
     def __prepare_dialling_pipelines(self):
         self.select_call_frame_time()
         self.select_call_codecs()
-        if self.audio_output == None:     self.audio_output = LineSink()
+        if self.audio_output == None:     self.audio_output = LineSink(preferred_device=self.speaker_device)
         if self.receive_mixer == None:    self.receive_mixer = Mixer(target_frame_ms=self.target_frame_time_ms)
         if self.dial_tone == None:        self.dial_tone = ToneSource(frequency=self.dial_tone_frequency, gain=0.0, ease_time_ms=self.dial_tone_ease_ms, target_frame_ms=self.target_frame_time_ms, codec=Null(), sink=self.receive_mixer)
         if self.receive_pipeline == None: self.receive_pipeline = Pipeline(source=self.receive_mixer, codec=Null(), sink=self.audio_output)
@@ -269,7 +284,7 @@ class Telephone(SignallingReceiver):
         print(f"{self.ringtone_path}")
         if self.ringtone_path != None and os.path.isfile(self.ringtone_path):
             if not self.ringer_pipeline:
-                if not self.ringer_output: self.ringer_output = LineSink()
+                if not self.ringer_output: self.ringer_output = LineSink(preferred_device=self.ringer_device)
                 self.ringer_source = OpusFileSource(self.ringtone_path, loop=True, target_frame_ms=60)
                 self.ringer_pipeline = Pipeline(source=self.ringer_source, codec=Null(), sink=self.ringer_output)
 
@@ -333,7 +348,7 @@ class Telephone(SignallingReceiver):
 
                     self.__prepare_dialling_pipelines()
                     self.transmit_mixer = Mixer(target_frame_ms=self.target_frame_time_ms)
-                    self.audio_input = LineSource(target_frame_ms=self.target_frame_time_ms, codec=Raw(), sink=self.transmit_mixer)
+                    self.audio_input = LineSource(preferred_device=self.microphone_device, target_frame_ms=self.target_frame_time_ms, codec=Raw(), sink=self.transmit_mixer)
                     self.transmit_pipeline = Pipeline(source=self.transmit_mixer,
                                                       codec=self.transmit_codec,
                                                       sink=Packetizer(self.active_call, failure_callback=self.__packetizer_failure))

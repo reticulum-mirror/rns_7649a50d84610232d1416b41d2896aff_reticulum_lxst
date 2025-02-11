@@ -22,14 +22,17 @@ class ReticulumTelephone():
     PATH_TIME        = 10
 
     def __init__(self, configdir, rnsconfigdir, verbosity = 0):
-        self.configdir     = configdir
-        self.config        = None
-        self.should_run    = False
-        self.state         = self.STATE_AVAILABLE
-        self.direction     = None
-        self.last_input    = None
-        self.first_run     = False
-        self.ringtone_path = None
+        self.configdir         = configdir
+        self.config            = None
+        self.should_run        = False
+        self.state             = self.STATE_AVAILABLE
+        self.direction         = None
+        self.last_input        = None
+        self.first_run         = False
+        self.ringtone_path     = None
+        self.speaker_device    = None
+        self.microphone_device = None
+        self.ringer_device     = None
         self.reload_config()
         self.main_menu()
         
@@ -39,6 +42,9 @@ class ReticulumTelephone():
         self.telephone.set_ringing_callback(self.ringing)
         self.telephone.set_established_callback(self.call_established)
         self.telephone.set_ended_callback(self.call_ended)
+        self.telephone.set_speaker(self.speaker_device)
+        self.telephone.set_microphone(self.microphone_device)
+        self.telephone.set_ringer(self.ringer_device)
 
     def create_default_config(self):
         rnphone_config = ConfigObj(__default_rnphone_config__.splitlines())
@@ -110,6 +116,9 @@ class ReticulumTelephone():
         if "telephone" in self.config:
             config = self.config["telephone"]
             if "ringtone" in config: self.ringtone_path = os.path.join(self.configdir, config["ringtone"])
+            if "speaker" in config: self.speaker_device = config["speaker"]
+            if "microphone" in config: self.microphone_device = config["microphone"]
+            if "ringer" in config: self.ringer_device = config["ringer"]
 
     @property
     def is_available(self):
@@ -282,12 +291,21 @@ def main():
     try:
         parser = argparse.ArgumentParser(description="Reticulum Telephone Utility")
 
+        parser.add_argument("-l", "--list-devices", action="store_true", help="list available audio devices", default=False)
         parser.add_argument("--config", action="store", default=None, help="path to config directory", type=str)
         parser.add_argument("--rnsconfig", action="store", default=None, help="path to alternative Reticulum config directory", type=str)
         parser.add_argument("--version", action="version", version="rnprobe {version}".format(version=__version__))
         parser.add_argument('-v', '--verbose', action='count', default=0)
 
         args = parser.parse_args()
+
+        if args.list_devices:
+            import LXST
+            RNS.loglevel = 0
+            print("\nAvailable audio devices:")
+            for device in LXST.Sources.Backend().soundcard.all_speakers():  print(f"  Output : {device}")
+            for device in LXST.Sinks.Backend().soundcard.all_microphones(): print(f"  Input  : {device}")
+            exit(0)
 
         ReticulumTelephone(configdir = args.config,
                            rnsconfigdir = args.rnsconfig,
@@ -305,7 +323,18 @@ __default_rnphone_config__ = """# This is an example rnphone config file.
     # You can define the ringtone played when the
     # phone is ringing. Must be in OPUS format, and
     # located in the rnphone config directory.
+    
     ringtone = ringtone.opus
+
+    # You can define the preferred audio devices
+    # to use as the speaker output, ringer output
+    # and microphone input. The names do not have
+    # to be an exact match to your full soundcard
+    # device name, but will be fuzzy matched.
+    
+    # speaker = device name
+    # microphone = device name
+    # ringer = device name
 """
 
 class Terminal():

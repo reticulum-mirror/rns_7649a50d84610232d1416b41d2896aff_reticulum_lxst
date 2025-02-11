@@ -7,11 +7,12 @@ from collections import deque
 class LinuxBackend():
     SAMPLERATE = 48000
 
-    def __init__(self, samplerate=SAMPLERATE):
+    def __init__(self, preferred_device=None, samplerate=SAMPLERATE):
         import soundcard
-        self.soundcard  = soundcard
-        self.device     = soundcard.default_speaker()
         self.samplerate = samplerate
+        self.soundcard  = soundcard
+        if preferred_device: self.device = self.soundcard.get_speaker(preferred_device)
+        else:                self.device = soundcard.default_speaker()
         RNS.log(f"Using output device {self.device}", RNS.LOG_DEBUG)
 
     def flush(self):
@@ -46,7 +47,8 @@ class LineSink(LocalSink):
     AUTOSTART_MIN = 1
     FRAME_TIMEOUT = 8
 
-    def __init__(self, autodigest=True):
+    def __init__(self, preferred_device=None, autodigest=True):
+        self.preferred_device     = preferred_device
         self.frame_deque          = deque(maxlen=self.MAX_FRAMES)
         self.should_run           = False
         self.digest_thread        = None
@@ -60,7 +62,7 @@ class LineSink(LocalSink):
         self.buffer_max_height    = self.MAX_FRAMES-3
         
         self.preferred_samplerate = Backend.SAMPLERATE
-        self.backend              = Backend(samplerate=self.preferred_samplerate)
+        self.backend              = Backend(preferred_device=self.preferred_device, samplerate=self.preferred_samplerate)
         self.samplerate           = self.backend.samplerate
         self.channels             = self.backend.device.channels
 
