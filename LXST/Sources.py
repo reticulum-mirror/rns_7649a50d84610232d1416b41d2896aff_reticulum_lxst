@@ -18,8 +18,10 @@ class LinuxBackend():
         import soundcard
         self.samplerate = samplerate
         self.soundcard  = soundcard
-        if preferred_device: self.device = self.soundcard.get_microphone(preferred_device)
-        else:                self.device = self.soundcard.default_microphone()
+        if preferred_device:
+            try:    self.device = self.soundcard.get_microphone(preferred_device)
+            except: self.device = self.soundcard.default_microphone()
+        else:       self.device = self.soundcard.default_microphone()
         self.channels   = self.device.channels
         self.bitdepth   = 32
         RNS.log(f"Using input device {self.device}", RNS.LOG_DEBUG)

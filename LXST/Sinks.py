@@ -11,8 +11,10 @@ class LinuxBackend():
         import soundcard
         self.samplerate = samplerate
         self.soundcard  = soundcard
-        if preferred_device: self.device = self.soundcard.get_speaker(preferred_device)
-        else:                self.device = soundcard.default_speaker()
+        if preferred_device:
+            try:    self.device = self.soundcard.get_speaker(preferred_device)
+            except: self.device = soundcard.default_speaker()
+        else:       self.device = soundcard.default_speaker()
         RNS.log(f"Using output device {self.device}", RNS.LOG_DEBUG)
 
     def flush(self):

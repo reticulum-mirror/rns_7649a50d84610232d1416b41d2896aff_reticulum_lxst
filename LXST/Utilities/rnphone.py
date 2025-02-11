@@ -237,31 +237,34 @@ class ReticulumTelephone():
         print(f"Identity hash of this telephone: {RNS.prettyhexrep(self.identity.hash)}\n")
 
     def phonebook_menu(self, args=None):
-        def exit_menu(args=None):
-            print("Phonebook closed")
-            self.main_menu()
+        if len(self.phonebook) < 1:
+            print("\nNo entries in phonebook\n")
+        else:
+            def exit_menu(args=None):
+                print("Phonebook closed")
+                self.main_menu()
 
-        def dial_factory(identity_hash):
-            def x(args=None): self.dial(identity_hash)
-            return x
+            def dial_factory(identity_hash):
+                def x(args=None): self.dial(identity_hash)
+                return x
 
-        print("")
-        print(f"{Terminal.UNDERLINE}Phonebook{Terminal.END}")
+            print("")
+            print(f"{Terminal.UNDERLINE}Phonebook{Terminal.END}")
 
-        self.active_menu = {}
-        maxlen = 0; maxnlen = len(str(len(self.phonebook))); n = 0
-        for name in self.phonebook: maxlen = max(maxlen, len(name))
-        for name in self.phonebook:
-            n += 1; identity_hash = self.phonebook[name]
-            spaces = maxlen-len(name); nspaces = maxnlen-len(str(n)); s = " "
-            print(f"  {Terminal.BOLD}{s*nspaces}{n}{Terminal.END} {name}{s*spaces} : <{identity_hash}>")
-            self.active_menu[f"{n}"] = dial_factory(identity_hash)
+            self.active_menu = {}
+            maxlen = 0; maxnlen = len(str(len(self.phonebook))); n = 0
+            for name in self.phonebook: maxlen = max(maxlen, len(name))
+            for name in self.phonebook:
+                n += 1; identity_hash = self.phonebook[name]
+                spaces = maxlen-len(name); nspaces = maxnlen-len(str(n)); s = " "
+                print(f"  {Terminal.BOLD}{s*nspaces}{n}{Terminal.END} {name}{s*spaces} : <{identity_hash}>")
+                self.active_menu[f"{n}"] = dial_factory(identity_hash)
 
-        print(f"  {Terminal.BOLD}b{Terminal.END}ack{s*(max(0, maxlen+maxnlen-2))}: Back to main menu\n")
-        self.active_menu["b"] = exit_menu
-        self.active_menu["back"] = exit_menu
-        self.active_menu["q"] = exit_menu
-        self.active_menu["quit"] = exit_menu
+            print(f"  {Terminal.BOLD}b{Terminal.END}ack{s*(max(0, maxlen+maxnlen-2))}: Back to main menu\n")
+            self.active_menu["b"] = exit_menu
+            self.active_menu["back"] = exit_menu
+            self.active_menu["q"] = exit_menu
+            self.active_menu["quit"] = exit_menu
 
     def main_menu(self, args=None):
         def m_help(argv):

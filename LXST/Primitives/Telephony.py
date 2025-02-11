@@ -281,7 +281,6 @@ class Telephone(SignallingReceiver):
         if self.receive_pipeline == None: self.receive_pipeline = Pipeline(source=self.receive_mixer, codec=Null(), sink=self.audio_output)
 
     def __activate_ring_tone(self):
-        print(f"{self.ringtone_path}")
         if self.ringtone_path != None and os.path.isfile(self.ringtone_path):
             if not self.ringer_pipeline:
                 if not self.ringer_output: self.ringer_output = LineSink(preferred_device=self.ringer_device)
