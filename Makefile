@@ -21,3 +21,10 @@ build_wheel:
 	python3 setup.py sdist bdist_wheel
 
 release: remove_symlinks build_wheel create_symlinks
+
+upload:
+	@echo Ready to publish release, hit enter to continue
+	@read VOID
+	@echo Uploading to PyPi...
+	twine upload dist/*
+	@echo Release published
