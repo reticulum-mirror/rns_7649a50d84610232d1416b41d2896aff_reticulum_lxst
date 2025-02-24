@@ -20,7 +20,7 @@ setuptools.setup(
     description="Lightweight Extensible Signal Transport for Reticulum",
     long_description=long_description,
     long_description_content_type="text/markdown",
-    url="https://github.com/markqvist/lxst",
+    url="https://git.unsigned.io/markqvist/lxst",
     packages=packages,
     classifiers=[
         "Programming Language :: Python :: 3",
