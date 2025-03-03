@@ -33,6 +33,8 @@ class ReticulumTelephone():
         self.speaker_device    = None
         self.microphone_device = None
         self.ringer_device     = None
+        self.keypad            = None
+        self.display           = None
         self.phonebook         = {}
         self.reload_config()
         self.main_menu()
@@ -131,7 +133,24 @@ class ReticulumTelephone():
                     except:
                         pass
 
+        if "hardware" in self.config:
+            config = self.config["hardware"]
+            if "keypad" in config: self.enable_keypad(config["keypad"].lower())
+            if "display" in config: self.enable_display(config["display"].lower())
+
         self.last_dialled_identity_hash = None
+
+    def enable_keypad(self, driver):
+        if driver == "gpio_4x4":
+            from LXST.Primitives.hardware.keypad_gpio_4x4 import Keypad
+            self.keypad = Keypad(callback=self.__keypad_event)
+        else: raise OSError("Unknown keypad driver specified")
+
+    def enable_display(self, driver):
+        if driver == "i2c_lcd1602":
+            from LXST.Primitives.hardware.display_i2c_lcd1602 import LCD
+            self.display = LCD()
+        else: raise OSError("Unknown display driver specified")
 
     @property
     def is_available(self):
@@ -405,6 +424,14 @@ __default_rnphone_config__ = """# This is an example rnphone config file.
     # Mary = f3e8c3359b39d36f3baff0a616a73d3e
     # Jake = b8d80b1b7a9d3147880b366995422a45
     # Dean = 05d4c6697bb38e5458a3077571157bfa
+
+[hardware]
+    # If the required hardware is connected, and
+    # the neccessary modules installed, you can
+    # enable various hardware components.
+    
+    # keypad = gpio_4x4
+    # display = i2c_lcd1602
 """
 
 class Terminal():
