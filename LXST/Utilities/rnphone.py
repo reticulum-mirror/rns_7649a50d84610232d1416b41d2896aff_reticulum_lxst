@@ -17,6 +17,14 @@ class ReticulumTelephone():
     STATE_RINGING    = 0x02
     STATE_IN_CALL    = 0x03
 
+    HW_SLEEP_TIMEOUT = 15
+    HW_STATE_IDLE    = 0x00
+    HW_STATE_DIAL    = 0x01
+    HW_STATE_SLEEP   = 0xFF
+    KPD_NUMBERS      = ["0","1","2","3","4","5","6","7","8","9"]
+    KPD_HEX_ALPHA    = ["A","B","C","D","E","F"]
+    KPD_SYMBOLS      = ["*","#"]
+
     RING_TIME        = 30
     WAIT_TIME        = 60
     PATH_TIME        = 10
@@ -25,7 +33,11 @@ class ReticulumTelephone():
         self.configdir         = configdir
         self.config            = None
         self.should_run        = False
+        self.telephone         = None
         self.state             = self.STATE_AVAILABLE
+        self.hw_state          = self.HW_STATE_IDLE
+        self.hw_last_event     = time.time()
+        self.hw_input          = ""
         self.direction         = None
         self.last_input        = None
         self.first_run         = False
@@ -36,6 +48,8 @@ class ReticulumTelephone():
         self.keypad            = None
         self.display           = None
         self.phonebook         = {}
+        self.aliases           = {}
+        self.names             = {}
         self.reload_config()
         self.main_menu()
         
@@ -89,8 +103,6 @@ class ReticulumTelephone():
                 RNS.log("Check your configuration file for errors!", RNS.LOG_ERROR)
                 RNS.panic()
 
-        self.apply_config()
-
         # Generate or load primary identity
         if os.path.isfile(self.identitypath):
             try:
@@ -115,6 +127,32 @@ class ReticulumTelephone():
                 RNS.log("The contained exception was: %s" % (str(e)), RNS.LOG_ERROR)
                 exit(1)
 
+        self.apply_config()
+
+    def load_phonebook(self, phonebook):
+        for name in phonebook:
+            alias = None
+            identity_hash = phonebook[name]
+            if type(identity_hash) == list:
+                components = identity_hash
+                identity_hash = components[0]
+                alias_input = components[1]
+                alias = ""
+                for c in alias_input:
+                    if c in ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"]:
+                        alias += c
+                if len(alias) == 0: alias = None
+
+            if len(identity_hash) == RNS.Reticulum.TRUNCATED_HASHLENGTH//8*2:
+                if identity_hash != RNS.hexrep(self.identity.hash, delimit=False):
+                    try:
+                        hash_bytes = bytes.fromhex(identity_hash)
+                        self.phonebook[name] = identity_hash
+                        self.names[identity_hash] = name
+                        if alias: self.aliases[identity_hash] = alias
+                    except Exception as e:
+                        RNS.trace_exception(e)
+
     def apply_config(self):
         if "telephone" in self.config:
             config = self.config["telephone"]
@@ -124,14 +162,7 @@ class ReticulumTelephone():
             if "ringer" in config: self.ringer_device = config["ringer"]
 
         if "phonebook" in self.config:
-            for name in self.config["phonebook"]:
-                identity_hash = self.config["phonebook"][name]
-                if len(identity_hash) == RNS.Reticulum.TRUNCATED_HASHLENGTH//8*2:
-                    try:
-                        hash_bytes = bytes.fromhex(identity_hash)
-                        self.phonebook[name] = identity_hash
-                    except:
-                        pass
+            self.load_phonebook(self.config["phonebook"])
 
         if "hardware" in self.config:
             config = self.config["hardware"]
@@ -148,10 +179,15 @@ class ReticulumTelephone():
         else: raise OSError("Unknown keypad driver specified")
 
     def enable_display(self, driver):
-        if driver == "i2c_lcd1602":
-            from LXST.Primitives.hardware.display_i2c_lcd1602 import LCD
-            self.display = LCD()
-        else: raise OSError("Unknown display driver specified")
+        if self.display == None:
+            if driver == "i2c_lcd1602":
+                from LXST.Primitives.hardware.display_i2c_lcd1602 import LCD
+                self.display = LCD()
+            else: raise OSError("Unknown display driver specified")
+
+            if self.display:
+                threading.Thread(target=self._display_job, daemon=True).start()
+
 
     @property
     def is_available(self):
@@ -169,6 +205,14 @@ class ReticulumTelephone():
     def call_is_connecting(self):
         return self.state == self.STATE_CONNECTING
 
+    @property
+    def hw_is_idle(self):
+        return self.hw_state == self.HW_STATE_IDLE
+
+    @property
+    def hw_is_dialing(self):
+        return self.hw_state == self.HW_STATE_DIAL
+
     def start(self):
         if not self.should_run:
             self.telephone.announce()
@@ -185,17 +229,25 @@ class ReticulumTelephone():
         destination_hash = RNS.Destination.hash_from_name_and_identity("lxst.telephony", identity_hash)
         if not RNS.Transport.has_path(destination_hash):
             RNS.Transport.request_path(destination_hash)
+            if self.display: self.display.print("Finding path...", x=0, y=0)
             def spincheck():
                 return RNS.Transport.has_path(destination_hash)
             self.__spin(spincheck, "Requesting path for call to "+RNS.prettyhexrep(identity_hash), self.path_time)
             if not spincheck():
                 print("Path request timed out")
+                if self.display:
+                    self.display.print("Finding path", x=0, y=0)
+                    self.display.print("timed out", x=0, y=1)
+                    time.sleep(1.5)
                 self.became_available()
 
         self.telephone.set_busy(False)
         if RNS.Transport.has_path(destination_hash):
+            if self.display: self.display.print("Calling...", x=0, y=0)
             identity = RNS.Identity.recall(destination_hash)
             self.call(identity)
+        else:
+            self.became_available()
 
     def redial(self, args=None):
         if self.last_dialled_identity_hash: self.dial(self.last_dialled_identity_hash)
@@ -247,8 +299,8 @@ class ReticulumTelephone():
                 print(f"\r{erase_str}", end="")
 
                 if self.display:
-                    self.display.print("In call")
-                    self.display.print(f"{time_string}", y=1)
+                    self.display.print("In call", x=0, y=0)
+                    self.display.print(f"{time_string}", x=0, y=1)
                     time.sleep(1.00)
                 else:
                     time.sleep(0.25)
@@ -269,6 +321,11 @@ class ReticulumTelephone():
             self.display.print("Telephone Ready", x=0, y=0)
             self.display.print("", x=0, y=1)
 
+        if self.display or self.keypad:
+            self.hw_last_event = time.time()
+            self.hw_input = ""
+            self.hw_state = self.HW_STATE_IDLE
+
     def print_identity(self, args):
         print(f"Identity hash of this telephone: {RNS.prettyhexrep(self.identity.hash)}\n")
 
@@ -288,13 +345,18 @@ class ReticulumTelephone():
             print(f"{Terminal.UNDERLINE}Phonebook{Terminal.END}")
 
             self.active_menu = {}
-            maxlen = 0; maxnlen = len(str(len(self.phonebook))); n = 0
+            maxaliaslen = 0
+            for identity_hash in self.aliases: maxaliaslen = max(maxaliaslen, len(self.aliases[identity_hash]))
+            maxlen = 0; maxnlen = max(maxaliaslen, len(str(len(self.phonebook)))); n = 0
             for name in self.phonebook: maxlen = max(maxlen, len(name))
             for name in self.phonebook:
                 n += 1; identity_hash = self.phonebook[name]
-                spaces = maxlen-len(name); nspaces = maxnlen-len(str(n)); s = " "
-                print(f"  {Terminal.BOLD}{s*nspaces}{n}{Terminal.END} {name}{s*spaces} : <{identity_hash}>")
-                self.active_menu[f"{n}"] = dial_factory(identity_hash)
+                alias = n
+                if identity_hash in self.aliases:
+                    alias = self.aliases[identity_hash]
+                spaces = maxlen-len(name); nspaces = maxnlen-len(str(alias)); s = " "
+                print(f"  {Terminal.BOLD}{s*nspaces}{alias}{Terminal.END} {name}{s*spaces} : <{identity_hash}>")
+                self.active_menu[f"{alias}"] = dial_factory(identity_hash)
 
             print(f"  {Terminal.BOLD}b{Terminal.END}ack{s*(max(0, maxlen+maxnlen-2))}: Back to main menu\n")
             self.active_menu["b"] = exit_menu
@@ -390,14 +452,50 @@ class ReticulumTelephone():
         else:
             return True
 
+    def _display_job(self):
+        while self.display:
+            now = time.time()
+            if self.is_available and self.hw_is_idle and (self.telephone and not self.telephone.busy):
+                if now - self.hw_last_event >= self.HW_SLEEP_TIMEOUT:
+                    self.hw_state = self.HW_STATE_SLEEP
+                    self._sleep_display()
+
+            time.sleep(1)
+
+    def _sleep_display(self):
+        if self.display: self.display.sleep()
+
+    def _wake_display(self):
+        if self.display: self.display.wake()
+
+    def _update_display(self):
+        if self.display:
+            if self.hw_is_dialing:
+                if len(self.hw_input) == 0: lookup_name = "Enter number"
+                else: lookup_name = "Unknown"
+
+                for identity_hash in self.aliases:
+                    alias = self.aliases[identity_hash]
+                    if self.hw_input == alias: lookup_name = self.names[identity_hash]
+
+                self.display.print(f">{self.hw_input}", x=0, y=0)
+                self.display.print(f"{lookup_name}", x=0, y=1)
+
+
+
     def _keypad_event(self, keypad, event):
-        print(f"Event from {keypad}: {event}")
-        if self.is_ringing:
+        self.hw_last_event = time.time()
+        if self.hw_state == self.HW_STATE_SLEEP:
+            self.hw_state = self.HW_STATE_IDLE
+            self._wake_display()
+            self.became_available()
+
+        elif self.is_ringing:
             if event[0] == "D" and event[1] == self.keypad.ec.DOWN:
                 print(f"Answering call from {RNS.prettyhexrep(self.caller.hash)}")
                 if not self.telephone.answer(self.caller):
                     print(f"Could not answer call from {RNS.prettyhexrep(self.caller.hash)}")
-            elif event[0] == "A" and event[1] == self.keypad.ec.DOWN:
+            elif event[0] == "C" and event[1] == self.keypad.ec.DOWN:
                 print(f"Rejecting call from {RNS.prettyhexrep(self.caller.hash)}")
                 self.telephone.hangup()
 
@@ -405,6 +503,27 @@ class ReticulumTelephone():
             if event[0] == "D" and event[1] == self.keypad.ec.DOWN:
                 print(f"Hanging up call with {RNS.prettyhexrep(self.caller.hash)}")
                 self.telephone.hangup()
+
+        elif self.is_available and self.hw_is_idle:
+            if event[0] == "A" and event[1] == self.keypad.ec.DOWN:
+                self.hw_input = ""; self.hw_state = self.HW_STATE_DIAL
+                self._update_display()
+
+        elif self.is_available and self.hw_is_dialing:
+            if event[1] == self.keypad.ec.DOWN:
+                if event[0] in self.KPD_NUMBERS: self.hw_input += event[0]
+                if event[0] == "A": self.became_available()
+                if event[0] == "B": self.hw_input = self.hw_input[:-1]
+                if event[0] == "C": self.hw_input = ""
+                if event[0] == "D":
+                    for identity_hash in self.aliases:
+                        alias = self.aliases[identity_hash]
+                        if self.hw_input == alias:
+                            self.hw_input = ""
+                            self.hw_state = self.HW_STATE_IDLE
+                            self.dial(identity_hash)
+            
+            self._update_display()
 
 def main():
     try:
@@ -462,6 +581,12 @@ __default_rnphone_config__ = """# This is an example rnphone config file.
     # Mary = f3e8c3359b39d36f3baff0a616a73d3e
     # Jake = b8d80b1b7a9d3147880b366995422a45
     # Dean = 05d4c6697bb38e5458a3077571157bfa
+
+    # You can optionally specify a numerical
+    # alias for calling with a physical keypad
+
+    # Rudy = 5d2d14619dfa0ff06278c17347c14331, 241
+    # Josh = fcfb80d4cd3aab7c8710541fb2317974, 7907
 
 [hardware]
     # If the required hardware is connected, and

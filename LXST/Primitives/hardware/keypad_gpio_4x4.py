@@ -12,7 +12,7 @@ class Event:
 class Keypad():
     ROWS             = 4
     COLS             = 4
-    SCAN_INTERVAL_MS = 50
+    SCAN_INTERVAL_MS = 20
 
     DEFAULT_MAP      = [["1", "2", "3", "A"],
                         ["4", "5", "6", "B"],

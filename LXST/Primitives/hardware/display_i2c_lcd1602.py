@@ -70,32 +70,28 @@ class LCD():
 
     def print(self, string, x=0, y=0):
         string = string.ljust(LCD.COLS," ")
-
-        if x <  0: x = 0; if x > 15: x = 15
-        if y <  0: y = 0; if y >  1: y = 1
-     
-        # Set cursor location
-        self.__send_command(0x80 + 0x40 * y + x)
-
-        # if row == 2: row = LCD.ROW_2
-        # else: row = LCD.ROW_1
-
-        # if row != self.row:
-        #     self.row = row
-        #     self.__send_command(self.row)
-
+        if x <  0: x = 0
+        if x > 15: x = 15
+        if y <  0: y = 0
+        if y >  1: y = 1
+        if self.is_sleeping: self.wake()
+        self.__send_command(0x80 + 0x40 * y + x) # Set cursor location
         for i in range(LCD.COLS): self.__send_data(ord(string[i]))
 
     def clear(self):
         self.__send_command(0x01)
 
+    @property
+    def is_sleeping(self):
+        return self.backlight == LCD.BACKLIGHT_OFF
+
     def sleep(self):
         self.backlight = LCD.BACKLIGHT_OFF
-        self.__send_command(0x01)
+        self.__send_command(LCD.CMD_CLEAR)
 
     def wake(self):
         self.backlight = LCD.BACKLIGHT_ON
-        self.__send_command(0x01)
+        self.__init_display()
 
     def close(self):
         self.sleep()
