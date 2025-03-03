@@ -68,16 +68,26 @@ class LCD():
     def __send_byte(self, byte):
         self.bus.write_byte(self.address, byte | self.backlight)
 
-    def print(self, string, row=1):
-        if row == 2: row = LCD.ROW_2
-        else: row = LCD.ROW_1
-
+    def print(self, string, x=0, y=0):
         string = string.ljust(LCD.COLS," ")
 
-        if row != self.row:
-            self.row = row
-            self.__send_command(self.row)
+        if x <  0: x = 0; if x > 15: x = 15
+        if y <  0: y = 0; if y >  1: y = 1
+     
+        # Set cursor location
+        self.__send_command(0x80 + 0x40 * y + x)
+
+        # if row == 2: row = LCD.ROW_2
+        # else: row = LCD.ROW_1
+
+        # if row != self.row:
+        #     self.row = row
+        #     self.__send_command(self.row)
+
         for i in range(LCD.COLS): self.__send_data(ord(string[i]))
+
+    def clear(self):
+        self.__send_command(0x01)
 
     def sleep(self):
         self.backlight = LCD.BACKLIGHT_OFF

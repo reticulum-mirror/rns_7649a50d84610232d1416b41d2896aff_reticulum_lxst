@@ -143,7 +143,8 @@ class ReticulumTelephone():
     def enable_keypad(self, driver):
         if driver == "gpio_4x4":
             from LXST.Primitives.hardware.keypad_gpio_4x4 import Keypad
-            self.keypad = Keypad(callback=self.__keypad_event)
+            self.keypad = Keypad(callback=self._keypad_event)
+            self.keypad.start()
         else: raise OSError("Unknown keypad driver specified")
 
     def enable_display(self, driver):
@@ -212,6 +213,10 @@ class ReticulumTelephone():
         self.direction = "from" if self.direction == None else "to"
         print(f"\n\nIncoming call from {RNS.prettyhexrep(self.caller.hash)}")
         print(f"Hit enter to answer, {Terminal.BOLD}r{Terminal.END} to reject")
+        if self.display:
+            remote_str = RNS.hexrep(self.caller.hash, delimit=False)
+            self.display.print(remote_str[:16], x=0, y=0)
+            self.display.print(remote_str[16:], x=0, y=1)
 
     def call_ended(self, remote_identity):
         if self.is_in_call or self.is_ringing or self.call_is_connecting:
@@ -234,12 +239,20 @@ class ReticulumTelephone():
             erase_str = ""
             while self.state == self.STATE_IN_CALL:
                 elapsed      = round(time.time()-started)
-                stat_string  = f"In call for {RNS.prettytime(elapsed)}, hit enter to hang up "
+                time_string  = RNS.prettytime(elapsed)
+                stat_string  = f"In call for {time_string}, hit enter to hang up "
                 print(f"\r{stat_string}", end="")
                 erase_string = " "*len(stat_string)
                 sys.stdout.flush()
-                time.sleep(0.25)
                 print(f"\r{erase_str}", end="")
+
+                if self.display:
+                    self.display.print("In call")
+                    self.display.print(f"{time_string}", y=1)
+                    time.sleep(1.00)
+                else:
+                    time.sleep(0.25)
+
             print(f"\r{erase_str}> ", end="")
 
         threading.Thread(target=job, daemon=True).start()
@@ -251,6 +264,10 @@ class ReticulumTelephone():
             print(f"Enter identity hash and hit enter to call{hs}\n", end="")
         print("> ", end="")
         sys.stdout.flush()
+
+        if self.display:
+            self.display.print("Telephone Ready", x=0, y=0)
+            self.display.print("", x=0, y=1)
 
     def print_identity(self, args):
         print(f"Identity hash of this telephone: {RNS.prettyhexrep(self.identity.hash)}\n")
@@ -373,8 +390,21 @@ class ReticulumTelephone():
         else:
             return True
 
-    def __keypad_event(self, keypad, event):
-        pass
+    def _keypad_event(self, keypad, event):
+        print(f"Event from {keypad}: {event}")
+        if self.is_ringing:
+            if event[0] == "D" and event[1] == self.keypad.ec.DOWN:
+                print(f"Answering call from {RNS.prettyhexrep(self.caller.hash)}")
+                if not self.telephone.answer(self.caller):
+                    print(f"Could not answer call from {RNS.prettyhexrep(self.caller.hash)}")
+            elif event[0] == "A" and event[1] == self.keypad.ec.DOWN:
+                print(f"Rejecting call from {RNS.prettyhexrep(self.caller.hash)}")
+                self.telephone.hangup()
+
+        elif self.is_in_call or self.call_is_connecting:
+            if event[0] == "D" and event[1] == self.keypad.ec.DOWN:
+                print(f"Hanging up call with {RNS.prettyhexrep(self.caller.hash)}")
+                self.telephone.hangup()
 
 def main():
     try:

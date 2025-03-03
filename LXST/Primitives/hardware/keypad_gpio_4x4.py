@@ -33,6 +33,7 @@ class Keypad():
         self.scan_lock  = threading.Lock()
         self.callback   = callback
         self.should_run = False
+        self.ec         = Event
         self.set_key_map(key_map)
 
     def set_key_map(self, key_map):
