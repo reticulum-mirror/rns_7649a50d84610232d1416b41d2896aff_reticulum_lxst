@@ -4,6 +4,7 @@ import RNS
 import os
 import sys
 import time
+import signal
 import threading
 import argparse
 
@@ -29,7 +30,8 @@ class ReticulumTelephone():
     WAIT_TIME        = 60
     PATH_TIME        = 10
 
-    def __init__(self, configdir, rnsconfigdir, verbosity = 0):
+    def __init__(self, configdir, rnsconfigdir, verbosity = 0, service = False):
+        self.service           = service
         self.configdir         = configdir
         self.config            = None
         self.should_run        = False
@@ -69,7 +71,7 @@ class ReticulumTelephone():
         rnphone_config.write()
 
     def reload_config(self):
-        # Get configuration
+        if self.service: RNS.log("Loading configuration...", RNS.LOG_DEBUG)
         if self.configdir == None:
             if os.path.isdir("/etc/rnphone") and os.path.isfile("/etc/rnphone/config"):
                 self.configdir = "/etc/rnphone"
@@ -130,6 +132,7 @@ class ReticulumTelephone():
         self.apply_config()
 
     def load_phonebook(self, phonebook):
+        if self.service: RNS.log("Loading phonebook...", RNS.LOG_DEBUG)
         for name in phonebook:
             alias = None
             identity_hash = phonebook[name]
@@ -172,6 +175,7 @@ class ReticulumTelephone():
         self.last_dialled_identity_hash = None
 
     def enable_keypad(self, driver):
+        if self.service: RNS.log(f"Starting keypad: {driver}", RNS.LOG_DEBUG)
         if driver == "gpio_4x4":
             from LXST.Primitives.hardware.keypad_gpio_4x4 import Keypad
             self.keypad = Keypad(callback=self._keypad_event)
@@ -179,6 +183,7 @@ class ReticulumTelephone():
         else: raise OSError("Unknown keypad driver specified")
 
     def enable_display(self, driver):
+        if self.service: RNS.log(f"Starting display: {driver}", RNS.LOG_DEBUG)
         if self.display == None:
             if driver == "i2c_lcd1602":
                 from LXST.Primitives.hardware.display_i2c_lcd1602 import LCD
@@ -215,6 +220,8 @@ class ReticulumTelephone():
 
     def start(self):
         if not self.should_run:
+            signal.signal(signal.SIGINT, self.sigint_handler)
+            signal.signal(signal.SIGTERM, self.sigterm_handler)
             self.telephone.announce()
             self.should_run = True
             self.run()
@@ -260,15 +267,23 @@ class ReticulumTelephone():
         self.telephone.call(self.caller)
 
     def ringing(self, remote_identity):
+        if self.hw_state == self.HW_STATE_SLEEP: self.hw_state = self.HW_STATE_IDLE
         self.state = self.STATE_RINGING
         self.caller  = remote_identity
         self.direction = "from" if self.direction == None else "to"
         print(f"\n\nIncoming call from {RNS.prettyhexrep(self.caller.hash)}")
         print(f"Hit enter to answer, {Terminal.BOLD}r{Terminal.END} to reject")
         if self.display:
-            remote_str = RNS.hexrep(self.caller.hash, delimit=False)
-            self.display.print(remote_str[:16], x=0, y=0)
-            self.display.print(remote_str[16:], x=0, y=1)
+            hash_str = RNS.hexrep(self.caller.hash, delimit=False)
+            if hash_str in self.aliases:
+                remote_alias = self.aliases[hash_str]
+                remote_name  = self.names[hash_str]
+                self.display.print(remote_name, x=0, y=0)
+                self.display.print(f"({remote_alias})".rjust(self.display.COLS," "), x=0, y=1)
+
+            else:
+                self.display.print(hash_str[:16], x=0, y=0)
+                self.display.print(hash_str[16:], x=0, y=1)
 
     def call_ended(self, remote_identity):
         if self.is_in_call or self.is_ringing or self.call_is_connecting:
@@ -299,7 +314,7 @@ class ReticulumTelephone():
                 print(f"\r{erase_str}", end="")
 
                 if self.display:
-                    self.display.print("In call", x=0, y=0)
+                    self.display.print("Call connected", x=0, y=0)
                     self.display.print(f"{time_string}", x=0, y=1)
                     time.sleep(1.00)
                 else:
@@ -310,14 +325,16 @@ class ReticulumTelephone():
         threading.Thread(target=job, daemon=True).start()
 
     def became_available(self):
-        if self.is_available and self.first_run:
-            hs = ""
-            if not hasattr(self, "first_prompt"): hs = " (or ? for help)"; self.first_prompt = True
-            print(f"Enter identity hash and hit enter to call{hs}\n", end="")
-        print("> ", end="")
-        sys.stdout.flush()
+        if not self.service:
+            if self.is_available and self.first_run:
+                hs = ""
+                if not hasattr(self, "first_prompt"): hs = " (or ? for help)"; self.first_prompt = True
+                print(f"Enter identity hash and hit enter to call{hs}\n", end="")
+            print("> ", end="")
+            sys.stdout.flush()
 
         if self.display:
+            self.display.clear()
             self.display.print("Telephone Ready", x=0, y=0)
             self.display.print("", x=0, y=1)
 
@@ -392,44 +409,58 @@ class ReticulumTelephone():
                             "q": m_quit}
 
     def run(self):
-        print(f"\n{Terminal.BOLD}Reticulum Telephone Utility is ready{Terminal.END}")
-        print(f"  Identity hash: {RNS.prettyhexrep(self.identity.hash)}\n")
-        while self.should_run:
-            if self.is_available:
-                if self.last_input and len(self.last_input) == RNS.Reticulum.TRUNCATED_HASHLENGTH//8*2:
-                    if self.is_available:
-                        try:
-                            self.dial(self.last_input)
+        if self.service:
+            print(f"Reticulum Telephone Service is ready")
+            print(f"Identity hash: {RNS.prettyhexrep(self.identity.hash)}")
+        else:
+            print(f"\n{Terminal.BOLD}Reticulum Telephone Utility is ready{Terminal.END}")
+            print(f"  Identity hash: {RNS.prettyhexrep(self.identity.hash)}\n")
 
-                        except Exception as e:
-                            print(f"Invalid identity hash: {e}\n")
-                            RNS.trace_exception(e)
+        if self.service:
+            self.became_available()
+            while self.should_run:
+                time.sleep(0.5)
 
-                elif self.last_input and self.last_input.split(" ")[0] in self.active_menu:
-                    self.active_menu[self.last_input.split(" ")[0]](self.last_input.split(" ")[1:])
-                    self.became_available()
+        else:
+            while self.should_run:
+                if self.is_available:
+                    if self.last_input and len(self.last_input) == RNS.Reticulum.TRUNCATED_HASHLENGTH//8*2:
+                        if self.is_available:
+                            try:
+                                self.dial(self.last_input)
 
-                else:
-                    self.became_available()
+                            except Exception as e:
+                                print(f"Invalid identity hash: {e}\n")
+                                RNS.trace_exception(e)
 
-            elif self.is_ringing:
-                if self.last_input == "":
-                    print(f"Answering call from {RNS.prettyhexrep(self.caller.hash)}")
-                    if not self.telephone.answer(self.caller):
-                        print(f"Could not answer call from {RNS.prettyhexrep(self.caller.hash)}")
-                else:
-                    print(f"Rejecting call from {RNS.prettyhexrep(self.caller.hash)}")
+                    elif self.last_input and self.last_input.split(" ")[0] in self.active_menu:
+                        self.active_menu[self.last_input.split(" ")[0]](self.last_input.split(" ")[1:])
+                        self.became_available()
+
+                    else:
+                        self.became_available()
+
+                elif self.is_ringing:
+                    if self.last_input == "":
+                        print(f"Answering call from {RNS.prettyhexrep(self.caller.hash)}")
+                        if not self.telephone.answer(self.caller):
+                            print(f"Could not answer call from {RNS.prettyhexrep(self.caller.hash)}")
+                    else:
+                        print(f"Rejecting call from {RNS.prettyhexrep(self.caller.hash)}")
+                        self.telephone.hangup()
+
+                elif self.is_in_call or self.call_is_connecting:
+                    print(f"Hanging up call with {RNS.prettyhexrep(self.caller.hash)}")
                     self.telephone.hangup()
 
-            elif self.is_in_call or self.call_is_connecting:
-                print(f"Hanging up call with {RNS.prettyhexrep(self.caller.hash)}")
-                self.telephone.hangup()
+                self.last_input = input()
 
-            self.last_input = input()
-
-    def quit(self):
+    def cleanup(self):
         if self.display: self.display.close()
         if self.keypad: self.keypad.stop()
+
+    def quit(self):
+        self.cleanup()
         exit(0)
 
     def __spin(self, until=None, msg=None, timeout=None):
@@ -525,13 +556,23 @@ class ReticulumTelephone():
             
             self._update_display()
 
+    def sigint_handler(self, signal, frame):
+        self.cleanup()
+        exit(0)
+
+    def sigterm_handler(self, signal, frame):
+        self.cleanup()
+        exit(0)
+
 def main():
+    app = None
     try:
         parser = argparse.ArgumentParser(description="Reticulum Telephone Utility")
 
         parser.add_argument("-l", "--list-devices", action="store_true", help="list available audio devices", default=False)
         parser.add_argument("--config", action="store", default=None, help="path to config directory", type=str)
         parser.add_argument("--rnsconfig", action="store", default=None, help="path to alternative Reticulum config directory", type=str)
+        parser.add_argument("-s", "--service", action="store_true", help="run as a service", default=False)
         parser.add_argument("--version", action="version", version="rnprobe {version}".format(version=__version__))
         parser.add_argument('-v', '--verbose', action='count', default=0)
 
@@ -545,11 +586,15 @@ def main():
             for device in LXST.Sinks.Backend().soundcard.all_microphones(): print(f"  Input  : {device}")
             exit(0)
 
+
+
         ReticulumTelephone(configdir = args.config,
                            rnsconfigdir = args.rnsconfig,
-                           verbosity = args.verbose).start()
+                           verbosity = args.verbose,
+                           service = args.service).start()
 
     except KeyboardInterrupt:
+        if app: app.quit()
         print("")
         exit()
 

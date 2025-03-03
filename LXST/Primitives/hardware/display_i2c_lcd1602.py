@@ -79,7 +79,7 @@ class LCD():
         for i in range(LCD.COLS): self.__send_data(ord(string[i]))
 
     def clear(self):
-        self.__send_command(0x01)
+        self.__init_display()
 
     @property
     def is_sleeping(self):
