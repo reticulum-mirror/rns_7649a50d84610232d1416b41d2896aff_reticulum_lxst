@@ -7,6 +7,7 @@ exec(open("LXST/_version.py", "r").read())
 
 packages = setuptools.find_packages(exclude=[])
 packages.append("LXST.Utilities")
+packages.append("LXST.Primitives.hardware")
 packages.append("LXST.Codecs.libs.pydub")
 packages.append("LXST.Codecs.libs.pyogg")
 print("Packages:")

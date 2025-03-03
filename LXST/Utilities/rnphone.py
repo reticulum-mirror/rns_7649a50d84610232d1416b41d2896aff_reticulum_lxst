@@ -297,7 +297,7 @@ class ReticulumTelephone():
             print("")
         
         def m_quit(argv):
-            exit(0)
+            self.quit()
 
         self.active_menu = {"help": m_help,
                             "h": m_help,
@@ -348,6 +348,11 @@ class ReticulumTelephone():
 
             self.last_input = input()
 
+    def quit(self):
+        if self.display: self.display.close()
+        if self.keypad: self.keypad.stop()
+        exit(0)
+
     def __spin(self, until=None, msg=None, timeout=None):
         i = 0
         syms = "⢄⢂⢁⡁⡈⡐⡠"
@@ -367,6 +372,9 @@ class ReticulumTelephone():
             return False
         else:
             return True
+
+    def __keypad_event(self, keypad, event):
+        pass
 
 def main():
     try:
