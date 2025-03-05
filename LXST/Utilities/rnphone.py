@@ -542,7 +542,7 @@ class ReticulumTelephone():
             self._wake_display()
             self.became_available()
 
-        elif self.is_ringing:
+        if self.is_ringing:
             if event[0] == "D" and event[1] == self.keypad.ec.DOWN:
                 print(f"Answering call from {RNS.prettyhexrep(self.caller.hash)}")
                 if not self.telephone.answer(self.caller):
@@ -559,6 +559,10 @@ class ReticulumTelephone():
         elif self.is_available and self.hw_is_idle:
             if event[0] == "A" and event[1] == self.keypad.ec.DOWN:
                 self.hw_input = ""; self.hw_state = self.HW_STATE_DIAL
+                self._update_display()
+
+            if event[0] in self.KPD_NUMBERS and event[1] == self.keypad.ec.DOWN:
+                self.hw_input += event[0]; self.hw_state = self.HW_STATE_DIAL
                 self._update_display()
 
         elif self.is_available and self.hw_is_dialing:
@@ -679,9 +683,9 @@ Description=Reticulum Telephone Service
 After=sound.target
 
 [Service]
-# Wait 60 seconds for WiFi and audio
-# hardware to come up.
-ExecStartPre=/bin/sleep 60
+# Wait 30 seconds for WiFi and audio
+# hardware to initialise.
+ExecStartPre=/bin/sleep 30
 Type=simple
 Environment="DISPLAY=:0"
 Environment="XAUTHORITY=/home/USERNAME/.Xauthority"
