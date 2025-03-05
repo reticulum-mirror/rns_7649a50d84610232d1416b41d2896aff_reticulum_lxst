@@ -250,7 +250,15 @@ class ReticulumTelephone():
 
         self.telephone.set_busy(False)
         if RNS.Transport.has_path(destination_hash):
-            if self.display: self.display.print("Calling...", x=0, y=0)
+            call_hops = RNS.Transport.hops_to(destination_hash)
+            cs = "" if call_hops == 1 else "s"
+            print(f"Connecting call over {call_hops} hop{cs}...")
+            if self.display:
+                call_hops_str = f"({call_hops}h{cs})"
+                call_str = "Calling"; ns = self.display.COLS-(len(call_str)+len(call_hops_str)); s = " "*ns
+                disp_str = f"{call_str}{s}{call_hops_str}"
+                self.display.print(disp_str, x=0, y=0)
+
             identity = RNS.Identity.recall(destination_hash)
             self.call(identity)
         else:
@@ -346,6 +354,9 @@ class ReticulumTelephone():
     def print_identity(self, args):
         print(f"Identity hash of this telephone: {RNS.prettyhexrep(self.identity.hash)}\n")
 
+    def print_destination(self, args):
+        print(f"Destination hash of this telephone: {RNS.prettyhexrep(self.telephone.destination.hash)}\n")
+
     def phonebook_menu(self, args=None):
         if len(self.phonebook) < 1:
             print("\nNo entries in phonebook\n")
@@ -388,12 +399,18 @@ class ReticulumTelephone():
             print(f"  {Terminal.BOLD}p{Terminal.END}honebook : Open the phonebook")
             print(f"  {Terminal.BOLD}r{Terminal.END}edial    : Call the last called identity again")
             print(f"  {Terminal.BOLD}i{Terminal.END}dentity  : Display the identity hash of this telephone")
+            print(f"  {Terminal.BOLD}d{Terminal.END}esthash  : Display the destination hash of this telephone")
+            print(f"  {Terminal.BOLD}a{Terminal.END}nnounce  : Send an announce from this telephone")
             print(f"  {Terminal.BOLD}q{Terminal.END}uit      : Exit the program")
             print(f"  {Terminal.BOLD}h{Terminal.END}elp      : This help menu")
             print("")
         
         def m_quit(argv):
             self.quit()
+
+        def m_announce(argv):
+            self.telephone.announce()
+            print(f"Announce sent")
 
         self.active_menu = {"help": m_help,
                             "h": m_help,
@@ -403,6 +420,10 @@ class ReticulumTelephone():
                             "r": self.redial,
                             "i": self.print_identity,
                             "identity": self.print_identity,
+                            "d": self.print_destination,
+                            "desthash": self.print_destination,
+                            "a": m_announce,
+                            "anounce": m_announce,
                             "redial": self.redial,
                             "exit": m_quit,
                             "quit": m_quit,
@@ -573,6 +594,7 @@ def main():
         parser.add_argument("--config", action="store", default=None, help="path to config directory", type=str)
         parser.add_argument("--rnsconfig", action="store", default=None, help="path to alternative Reticulum config directory", type=str)
         parser.add_argument("-s", "--service", action="store_true", help="run as a service", default=False)
+        parser.add_argument("--systemd", action="store_true", help="display example systemd unit", default=False)
         parser.add_argument("--version", action="version", version="rnprobe {version}".format(version=__version__))
         parser.add_argument('-v', '--verbose', action='count', default=0)
 
@@ -586,7 +608,15 @@ def main():
             for device in LXST.Sinks.Backend().soundcard.all_microphones(): print(f"  Input  : {device}")
             exit(0)
 
-
+        if args.systemd:
+            print("To install rnphone as a system service, paste the")
+            print("systemd unit configuration below into a new file at:\n")
+            print("/etc/systemd/system/rnphone.service\n")
+            print("Then enable the service at boot by running:\n\nsudo systemctl enable rnphone\n")
+            print("--- begin systemd unit snipped ---\n")
+            print(__systemd_unit__.replace("USERNAME", os.getlogin()))
+            print("---  end systemd unit snipped  ---\n")
+            exit(0)
 
         ReticulumTelephone(configdir = args.config,
                            rnsconfigdir = args.rnsconfig,
@@ -640,6 +670,29 @@ __default_rnphone_config__ = """# This is an example rnphone config file.
     
     # keypad = gpio_4x4
     # display = i2c_lcd1602
+"""
+
+__systemd_unit__ = """# This systemd unit allows installing rnphone
+# as a system service on Linux-based devices
+[Unit]
+Description=Reticulum Telephone Service
+After=sound.target
+
+[Service]
+# Wait 60 seconds for WiFi and audio
+# hardware to come up.
+ExecStartPre=/bin/sleep 60
+Type=simple
+Environment="DISPLAY=:0"
+Environment="XAUTHORITY=/home/USERNAME/.Xauthority"
+Environment="XDG_RUNTIME_DIR=/run/user/1000"
+Restart=always
+RestartSec=5
+User=USERNAME
+ExecStart=/home/USERNAME/.local/bin/rnphone --service -vvv
+
+[Install]
+WantedBy=graphical.target
 """
 
 class Terminal():

@@ -40,6 +40,7 @@ class Telephone(SignallingReceiver):
         self.destination.set_link_established_callback(self.__incoming_link_established)
         self.call_handler_lock = threading.Lock()
         self.pipeline_lock = threading.Lock()
+        self.caller_pipeline_open_lock = threading.Lock()
         self.links = {}
         self.ring_time = ring_time
         self.wait_time = wait_time
@@ -339,8 +340,7 @@ class Telephone(SignallingReceiver):
                 self.hangup()
             else:
                 if not hasattr(self.active_call, "pipelines_opened"): self.active_call.pipelines_opened = False
-                if self.active_call.pipelines_opened:
-                    RNS.log(f"Pipelines already openened for call with {RNS.prettyhexrep(identity.hash)}", RNS.LOG_ERROR)
+                if self.active_call.pipelines_opened: RNS.log(f"Pipelines already openened for call with {RNS.prettyhexrep(identity.hash)}", RNS.LOG_ERROR)
                 else:
                     RNS.log(f"Opening audio pipelines for call with {RNS.prettyhexrep(identity.hash)}", RNS.LOG_DEBUG)
                     if self.active_call.is_incoming: self.signal(Signalling.STATUS_CONNECTING, self.active_call)
@@ -366,6 +366,7 @@ class Telephone(SignallingReceiver):
             if self.transmit_mixer:    self.transmit_mixer.start()
             if self.audio_input:       self.audio_input.start()
             if self.transmit_pipeline: self.transmit_pipeline.start()
+            if not self.audio_input:   RNS.log("No audio input was ready at call establishment", RNS.LOG_ERROR)
             RNS.log(f"Audio pipelines started", RNS.LOG_DEBUG)
 
     def __stop_pipelines(self):
@@ -437,13 +438,15 @@ class Telephone(SignallingReceiver):
                 elif signal == Signalling.STATUS_CONNECTING:
                     RNS.log("Call answered, remote is performing call setup, opening audio pipelines", RNS.LOG_DEBUG)
                     self.call_status = signal
-                    self.__reset_dialling_pipelines()
-                    self.__open_pipelines(self.active_call.get_remote_identity())
+                    with self.caller_pipeline_open_lock:
+                        self.__reset_dialling_pipelines()
+                        self.__open_pipelines(self.active_call.get_remote_identity())
                 elif signal == Signalling.STATUS_ESTABLISHED:
                     if self.active_call and self.active_call.is_outgoing:
                         RNS.log("Remote call setup completed, starting audio pipelines", RNS.LOG_DEBUG)
-                        self.__start_pipelines()
-                        self.__disable_dial_tone()
+                        with self.caller_pipeline_open_lock:
+                            self.__start_pipelines()
+                            self.__disable_dial_tone()
                         RNS.log(f"Call setup complete for {RNS.prettyhexrep(self.active_call.get_remote_identity().hash)}", RNS.LOG_DEBUG)
                         self.call_status = signal
                         if callable(self.__established_callback): self.__established_callback(self.active_call.get_remote_identity())
