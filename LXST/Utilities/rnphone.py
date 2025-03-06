@@ -170,6 +170,7 @@ class ReticulumTelephone():
         if "hardware" in self.config:
             config = self.config["hardware"]
             if "keypad" in config: self.enable_keypad(config["keypad"].lower())
+            self.enable_hook()
             if "display" in config: self.enable_display(config["display"].lower())
 
         self.last_dialled_identity_hash = None
@@ -182,6 +183,9 @@ class ReticulumTelephone():
             self.keypad.start()
         else: raise OSError("Unknown keypad driver specified")
 
+    def enable_hook(self, pin=None):
+        if self.keypad: self.keypad.enable_hook(pin=pin)
+
     def enable_display(self, driver):
         if self.service: RNS.log(f"Starting display: {driver}", RNS.LOG_DEBUG)
         if self.display == None:
@@ -192,7 +196,6 @@ class ReticulumTelephone():
 
             if self.display:
                 threading.Thread(target=self._display_job, daemon=True).start()
-
 
     @property
     def is_available(self):
@@ -543,7 +546,9 @@ class ReticulumTelephone():
             self.became_available()
 
         if self.is_ringing:
-            if event[0] == "D" and event[1] == self.keypad.ec.DOWN:
+            answer_events  = event[0] == "D" and event[1] == self.keypad.ec.DOWN
+            answer_events |= event[0] == "hook" and event[1] == self.keypad.ec.UP
+            if answer_events:
                 print(f"Answering call from {RNS.prettyhexrep(self.caller.hash)}")
                 if not self.telephone.answer(self.caller):
                     print(f"Could not answer call from {RNS.prettyhexrep(self.caller.hash)}")
@@ -552,7 +557,9 @@ class ReticulumTelephone():
                 self.telephone.hangup()
 
         elif self.is_in_call or self.call_is_connecting:
-            if event[0] == "D" and event[1] == self.keypad.ec.DOWN:
+            hangup_events  = event[0] == "D" and event[1] == self.keypad.ec.DOWN
+            hangup_events |= event[0] == "hook" and event[1] == self.keypad.ec.DOWN
+            if hangup_events:
                 print(f"Hanging up call with {RNS.prettyhexrep(self.caller.hash)}")
                 self.telephone.hangup()
 
@@ -566,18 +573,23 @@ class ReticulumTelephone():
                 self._update_display()
 
         elif self.is_available and self.hw_is_dialing:
+            dial_event = False
             if event[1] == self.keypad.ec.DOWN:
                 if event[0] in self.KPD_NUMBERS: self.hw_input += event[0]
                 if event[0] == "A": self.became_available()
                 if event[0] == "B": self.hw_input = self.hw_input[:-1]
                 if event[0] == "C": self.hw_input = ""
-                if event[0] == "D":
-                    for identity_hash in self.aliases:
-                        alias = self.aliases[identity_hash]
-                        if self.hw_input == alias:
-                            self.hw_input = ""
-                            self.hw_state = self.HW_STATE_IDLE
-                            self.dial(identity_hash)
+                if event[0] == "D": dial_event = True
+
+            if event[0] == "hook" and event[1] == self.keypad.ec.UP: dial_event = True
+
+            if dial_event:
+                for identity_hash in self.aliases:
+                    alias = self.aliases[identity_hash]
+                    if self.hw_input == alias:
+                        self.hw_input = ""
+                        self.hw_state = self.HW_STATE_IDLE
+                        self.dial(identity_hash)
             
             self._update_display()
 

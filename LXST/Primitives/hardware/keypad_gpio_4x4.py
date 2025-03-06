@@ -14,6 +14,9 @@ class Keypad():
     COLS             = 4
     SCAN_INTERVAL_MS = 20
 
+    LOW              = 0x00
+    HIGH             = 0x01
+
     DEFAULT_MAP      = [["1", "2", "3", "A"],
                         ["4", "5", "6", "B"],
                         ["7", "8", "9", "C"],
@@ -21,6 +24,8 @@ class Keypad():
 
     DEFAULT_ROWPINS  = [21, 20, 16, 12]
     DEFAULT_COLPINS  = [26, 19, 13, 6]
+    DEFAULT_HOOKPIN  = 5
+    HOOK_DEBOUNCE_MS = 150
 
     def __init__(self, row_pins=None, col_pins=None, key_map=None, callback=None):
         if not row_pins == None and (not type(row_pins) == list or len(row_pins) != 4):
@@ -32,9 +37,20 @@ class Keypad():
         self.col_pins   = col_pins or self.DEFAULT_COLPINS
         self.scan_lock  = threading.Lock()
         self.callback   = callback
+        self.hook_time  = 0
+        self.hook_pin   = None
+        self.on_hook    = True
+        self.check_hook = False
         self.should_run = False
         self.ec         = Event
         self.set_key_map(key_map)
+
+    def enable_hook(self, pin=None):
+        if pin == None: pin = self.DEFAULT_HOOKPIN
+        self.hook_pin = pin
+        GPIO.setup(self.hook_pin, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+        self.key_states["hook"] = False
+        self.check_hook = True
 
     def set_key_map(self, key_map):
         self.key_map    = key_map or self.DEFAULT_MAP
@@ -85,6 +101,19 @@ class Keypad():
 
             GPIO.output(self.row_pins[row], GPIO.LOW)
             GPIO.setup(self.row_pins[row], GPIO.IN, pull_up_down=GPIO.PUD_OFF)
+
+        if self.check_hook:
+            on_hook = GPIO.input(self.hook_pin) == GPIO.LOW
+
+            if on_hook:
+                active_keys.append("hook")
+                self.hook_time = time.time()
+
+            if self.key_states["hook"] == True and not on_hook:
+                if time.time()-self.hook_time < self.HOOK_DEBOUNCE_MS/1000:
+                    active_keys.append("hook")
+                else:
+                    self.hook_time = time.time()
 
         if len(active_keys) >= 0 and len(active_keys) <= 4: self.__handle(active_keys)
 
