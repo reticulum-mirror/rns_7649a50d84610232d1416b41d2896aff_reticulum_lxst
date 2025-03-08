@@ -169,8 +169,9 @@ class ReticulumTelephone():
 
         if "hardware" in self.config:
             config = self.config["hardware"]
-            if "keypad" in config: self.enable_keypad(config["keypad"].lower())
-            self.enable_hook()
+            if "keypad" in config:
+                self.enable_keypad(config["keypad"].lower())
+                if "keypad_hook_pin" in config: self.enable_hook(pin = config.as_int("keypad_hook_pin"))
             if "display" in config: self.enable_display(config["display"].lower())
 
         self.last_dialled_identity_hash = None
@@ -533,7 +534,7 @@ class ReticulumTelephone():
                     alias = self.aliases[identity_hash]
                     if self.hw_input == alias: lookup_name = self.names[identity_hash]
 
-                self.display.print(f">{self.hw_input}", x=0, y=0)
+                self.display.print(f"{self.hw_input}", x=0, y=0)
                 self.display.print(f"{lookup_name}", x=0, y=1)
 
 
@@ -660,6 +661,8 @@ __default_rnphone_config__ = """# This is an example rnphone config file.
     # and microphone input. The names do not have
     # to be an exact match to your full soundcard
     # device name, but will be fuzzy matched.
+    # You can list available device names with:
+    # rnphone -l
     
     # speaker = device name
     # microphone = device name
@@ -686,6 +689,12 @@ __default_rnphone_config__ = """# This is an example rnphone config file.
     
     # keypad = gpio_4x4
     # display = i2c_lcd1602
+
+    # If you have a keypad connected, you can
+    # also enable a GPIO pin for detecting
+    # on-hook/off-hook status
+
+    # keypad_hook_pin = 5
 """
 
 __systemd_unit__ = """# This systemd unit allows installing rnphone
