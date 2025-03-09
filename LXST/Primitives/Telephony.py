@@ -74,6 +74,11 @@ class Telephone(SignallingReceiver):
         self.announce()
         RNS.log(f"{self} listening on {RNS.prettyhexrep(self.destination.hash)}", RNS.LOG_DEBUG)
 
+    def teardown(self):
+        self.hangup()
+        RNS.Transport.deregister_destination(self.destination)
+        self.destination = None
+
     def announce(self):
         def job():
             time.sleep(1)

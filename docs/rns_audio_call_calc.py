@@ -97,6 +97,7 @@ def simulate(link_speed=2735, audio_slot_ms=400, codec_rate=1200,
     print(f"  Transport overhead   : {TRANSPORT_OVERHEAD} bytes ({RNS_OVERHEAD} from RNS, {PHY_OVERHEAD} from PHY)")
     print(f"  On-air length        : {PACKET_LEN} bytes")
     print(f"  Packet airtime       : {round(PACKET_AIRTIME,2)}ms")
+    print(f"  Transport bitrate    : {RNS.prettyspeed((PACKET_LEN*8)/(TARGET_MS/1000))}")
 
     print( "\n===== Results for "+RNS.prettyspeed(LINK_SPEED)+" Link Speed ===\n")
     print(f"  Final latency        : {TOTAL_LATENCY}ms")
@@ -129,8 +130,11 @@ def simulate(link_speed=2735, audio_slot_ms=400, codec_rate=1200,
 # simulate(link_speed=4690, audio_slot_ms=480, codec_rate=1200,
 #          signalling_bytes=18, method="msgpack")
 
-simulate(link_speed=60e3, audio_slot_ms=270, codec_rate=12000,
-         signalling_bytes=18, method="msgpack")
+#simulate(link_speed=60e3, audio_slot_ms=270, codec_rate=12000,
+#         signalling_bytes=18, method="msgpack")
+
+simulate(link_speed=9600, audio_slot_ms=300, codec_rate=3200,
+         signalling_bytes=2, method="msgpack")
 
 #print("\n\n= With protobuf ===============")
 #simulate(method="protobuf")

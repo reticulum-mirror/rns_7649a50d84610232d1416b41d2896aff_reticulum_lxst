@@ -695,6 +695,12 @@ __default_rnphone_config__ = """# This is an example rnphone config file.
     # on-hook/off-hook status
 
     # keypad_hook_pin = 5
+
+    # You can configure a pin for muting the
+    # ringer amplifier, if available
+
+    # amp_mute_pin = 25
+    # amp_mute_level = high
 """
 
 __systemd_unit__ = """# This systemd unit allows installing rnphone
