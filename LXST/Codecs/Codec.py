@@ -36,7 +36,19 @@ def resample_bytes(sample_bytes, bitdepth, channels, input_rate, output_rate, no
         audio = audio.apply_gain(-audio.max_dBFS)
 
     resampled_audio = audio.set_frame_rate(output_rate)
-    return resampled_audio.get_array_of_samples().tobytes()
+    resampled_bytes = resampled_audio.get_array_of_samples().tobytes()
+
+    # rate_factor = input_rate/output_rate
+    # input_samples = int(len(sample_bytes)/channels/sample_width)
+    # output_samples = int(len(resampled_bytes)/channels/sample_width)
+    # target_samples = int(input_samples/rate_factor)
+    # if output_samples < target_samples:
+    #     print("Mismatch")
+    #     add_samples = int(target_samples-output_samples)
+    #     fill = resampled_bytes[-sample_width:]*add_samples
+    #     resampled_bytes += fill
+
+    return resampled_bytes
 
 def resample(input_samples, bitdepth, channels, input_rate, output_rate, normalize=False):
     sample_width = bitdepth//8
