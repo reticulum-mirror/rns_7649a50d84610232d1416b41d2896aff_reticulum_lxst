@@ -171,12 +171,14 @@ class OpusFileSource(LocalSource):
     DEFAULT_FRAME_MS = 70
     TYPE_MAP_FACTOR  = np.iinfo("int16").max
 
-    def __init__(self, file_path, target_frame_ms=DEFAULT_FRAME_MS, loop=False, codec=None, sink=None):
+    def __init__(self, file_path, target_frame_ms=DEFAULT_FRAME_MS, loop=False, codec=None, sink=None, timed=False):
         self.target_frame_ms = target_frame_ms
         self.loop            = loop
+        self.timed           = timed
         self.read_lock       = threading.Lock()
         self.should_run      = False
         self.ingest_thread   = None
+        self.next_frame      = None
         self._codec          = None
 
         if file_path == None:
@@ -241,9 +243,11 @@ class OpusFileSource(LocalSource):
 
     def __ingest_job(self):
         with self.read_lock:
+            self.next_frame = time.time()
             fi = 0; spf = self.samples_per_frame; sc = self.sample_count
             while self.should_run:
-                if self.sink and self.sink.can_receive(from_source=self):
+                if self.sink and self.sink.can_receive(from_source=self) and (not self.timed or time.time() >= self.next_frame):
+                    self.next_frame = time.time()+self.frame_time
                     fi += 1
                     fs = (fi-1)*spf; fe = min(fi*spf, sc)
                     frame_samples = self.samples[fs:fe, :]
@@ -257,7 +261,8 @@ class OpusFileSource(LocalSource):
                     else:
                         if self.codec:
                             frame = self.codec.encode(frame_samples)
-                            self.sink.handle_frame(frame, self)
+                            if self.sink and self.sink.can_receive(from_source=self):
+                                self.sink.handle_frame(frame, self)
                 else:
                     time.sleep(self.frame_time*0.1)
 
