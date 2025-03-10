@@ -131,7 +131,7 @@ class LinkSource(RemoteSource, SignallingReceiver):
                                 if self.pipeline:
                                     self.sink.handle_frame(decoded_frame, self)
                                 else:
-                                    self.sink.handle_frame(frame[1:], self)
+                                    self.sink.handle_frame(decoded_frame, self, decoded=True)
 
                     if FIELD_SIGNALLING in unpacked:
                         super()._packet(data=None, packet=packet, unpacked=unpacked)

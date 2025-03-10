@@ -52,7 +52,7 @@ class Mixer(LocalSource, LocalSink):
         else:
             return False
 
-    def handle_frame(self, frame, source):
+    def handle_frame(self, frame, source, decoded=False):
         with self.insert_lock:
             if not source in self.incoming_frames:
                 self.incoming_frames[source]  = deque(maxlen=self.MAX_FRAMES)
@@ -67,7 +67,8 @@ class Mixer(LocalSource, LocalSink):
                     RNS.log(f"{self} samplerate set to {RNS.prettyfrequency(self.samplerate)}", RNS.LOG_DEBUG)
                     RNS.log(f"{self} frame time is {RNS.prettyshorttime(self.frame_time)}")
 
-            frame_samples = source.codec.decode(frame)
+            if not decoded: frame_samples = source.codec.decode(frame)
+            else:           frame_samples = frame
 
             # TODO: Add resampling for all source types
             # if CODEC_OUTPUT_RATE != self.samplerate:

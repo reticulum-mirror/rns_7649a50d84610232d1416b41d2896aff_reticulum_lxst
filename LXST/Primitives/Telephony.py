@@ -353,6 +353,7 @@ class Telephone(SignallingReceiver):
                     self.__prepare_dialling_pipelines()
                     self.transmit_mixer = Mixer(target_frame_ms=self.target_frame_time_ms)
                     self.audio_input = LineSource(preferred_device=self.microphone_device, target_frame_ms=self.target_frame_time_ms, codec=Raw(), sink=self.transmit_mixer)
+                    # self.audio_input = OpusFileSource("/home/markqvist/Information/Source/LXST/docs/425.opus", loop=True, target_frame_ms=self.target_frame_time_ms, codec=Raw(), sink=self.transmit_mixer, timed=True)
                     self.transmit_pipeline = Pipeline(source=self.transmit_mixer,
                                                       codec=self.transmit_codec,
                                                       sink=Packetizer(self.active_call, failure_callback=self.__packetizer_failure))
