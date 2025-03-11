@@ -49,6 +49,9 @@ class ReticulumTelephone():
         self.ringer_device     = None
         self.keypad            = None
         self.display           = None
+        self.allowed           = Telephone.ALLOW_ALL
+        self.allow_phonebook   = False
+        self.allowed_list      = []
         self.phonebook         = {}
         self.aliases           = {}
         self.names             = {}
@@ -64,6 +67,7 @@ class ReticulumTelephone():
         self.telephone.set_speaker(self.speaker_device)
         self.telephone.set_microphone(self.microphone_device)
         self.telephone.set_ringer(self.ringer_device)
+        self.telephone.set_allowed(self.allowed)
 
     def create_default_config(self):
         rnphone_config = ConfigObj(__default_rnphone_config__.splitlines())
@@ -131,6 +135,10 @@ class ReticulumTelephone():
 
         self.apply_config()
 
+    def __is_allowed(self, identity_hash):
+        if identity_hash in self.allowed_list: return True
+        else: return False
+
     def load_phonebook(self, phonebook):
         if self.service: RNS.log("Loading phonebook...", RNS.LOG_DEBUG)
         for name in phonebook:
@@ -153,8 +161,9 @@ class ReticulumTelephone():
                         self.phonebook[name] = identity_hash
                         self.names[identity_hash] = name
                         if alias: self.aliases[identity_hash] = alias
+                        if self.allow_phonebook: self.allowed_list.append(hash_bytes)
                     except Exception as e:
-                        RNS.trace_exception(e)
+                        RNS.log(f"Could not load phonebook entry for {name}: {e}", RNS.LOG_ERROR)
 
     def apply_config(self):
         if "telephone" in self.config:
@@ -163,6 +172,22 @@ class ReticulumTelephone():
             if "speaker" in config: self.speaker_device = config["speaker"]
             if "microphone" in config: self.microphone_device = config["microphone"]
             if "ringer" in config: self.ringer_device = config["ringer"]
+            if "allowed_callers" in config:
+                allowed_callers = config["allowed_callers"]
+                if str(allowed_callers).lower() == "all": self.allowed = Telephone.ALLOW_ALL
+                elif str(allowed_callers).lower() == "none": self.allowed = Telephone.ALLOW_NONE
+                elif str(allowed_callers).lower() == "phonebook":
+                    self.allow_phonebook = True
+                    self.allowed = self.__is_allowed
+                elif type(config["allowed_callers"]) == list:
+                    self.allowed = self.__is_allowed
+                    for identity_hash in config["allowed_callers"]:
+                        RNS.log(f"Looking at {identity_hash}")
+                        if len(identity_hash) == RNS.Reticulum.TRUNCATED_HASHLENGTH//8*2:
+                            if identity_hash != RNS.hexrep(self.identity.hash, delimit=False):
+                                try: hash_bytes = bytes.fromhex(identity_hash)
+                                except Exception as e: RNS.log(f"Could not load allowed caller entry {identity_hash}: {e}", RNS.LOG_ERROR)
+                                self.allowed_list.append(hash_bytes)
 
         if "phonebook" in self.config:
             self.load_phonebook(self.config["phonebook"])
@@ -667,6 +692,16 @@ __default_rnphone_config__ = """# This is an example rnphone config file.
     # speaker = device name
     # microphone = device name
     # ringer = device name
+
+    # You can configure who is allowed to call
+    # this telephone. This can be set to either
+    # "all", "none", "phonebook" or a list of
+    # identity hashes. See examples below.
+
+    # allowed_callers = all
+    # allowed_callers = none
+    # allowed_callers = phonebook
+    # allowed_callers = b8d80b1b7a9d3147880b366995422a45, fcfb80d4cd3aab7c8710541fb2317974
 
 [phonebook]
     # You can add entries to the phonebook for

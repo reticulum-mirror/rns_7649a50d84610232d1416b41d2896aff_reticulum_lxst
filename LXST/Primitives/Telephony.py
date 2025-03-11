@@ -15,29 +15,35 @@ from LXST.Network import SignallingReceiver, Packetizer, LinkSource
 PRIMITIVE_NAME = "telephony"
 
 class Signalling():
-    STATUS_BUSY        = 0x00
-    STATUS_REJECTED    = 0x01
-    STATUS_CALLING     = 0x02
-    STATUS_AVAILABLE   = 0x03
-    STATUS_RINGING     = 0x04
-    STATUS_CONNECTING  = 0x05
-    STATUS_ESTABLISHED = 0x06
-    AUTO_STATUS_CODES  = [STATUS_CALLING, STATUS_AVAILABLE, STATUS_RINGING,
+    STATUS_BUSY           = 0x00
+    STATUS_REJECTED       = 0x01
+    STATUS_CALLING        = 0x02
+    STATUS_AVAILABLE      = 0x03
+    STATUS_RINGING        = 0x04
+    STATUS_CONNECTING     = 0x05
+    STATUS_ESTABLISHED    = 0x06
+    AUTO_STATUS_CODES     = [STATUS_CALLING, STATUS_AVAILABLE, STATUS_RINGING,
                           STATUS_CONNECTING, STATUS_ESTABLISHED]
 
 class Telephone(SignallingReceiver):
-    RING_TIME           = 60
-    WAIT_TIME           = 70
-    DIAL_TONE_FREQUENCY = 382
-    DIAL_TONE_EASE_MS   = 3.14159
+    RING_TIME             = 60
+    WAIT_TIME             = 70
+    DIAL_TONE_FREQUENCY   = 382
+    DIAL_TONE_EASE_MS     = 3.14159
+    JOB_INTERVAL          = 5
+    ANNOUNCE_INTERVAL_MIN = 60*5
+    ANNOUNCE_INTERVAL     = 60*60*3
+    ALLOW_ALL             = 0xFF
+    ALLOW_NONE            = 0xFE
 
-    def __init__(self, identity, ring_time=RING_TIME, wait_time=WAIT_TIME, auto_answer=None):
+    def __init__(self, identity, ring_time=RING_TIME, wait_time=WAIT_TIME, auto_answer=None, allowed=ALLOW_ALL):
         super().__init__()
-        # if not isinstance(identity, RNS.Identity): raise TypeError("Invalid identity")
         self.identity = identity
         self.destination = RNS.Destination(self.identity, RNS.Destination.IN, RNS.Destination.SINGLE, APP_NAME, PRIMITIVE_NAME)
         self.destination.set_proof_strategy(RNS.Destination.PROVE_NONE)
         self.destination.set_link_established_callback(self.__incoming_link_established)
+        self.allowed = allowed
+        self.last_announce = 0
         self.call_handler_lock = threading.Lock()
         self.pipeline_lock = threading.Lock()
         self.caller_pipeline_open_lock = threading.Lock()
@@ -71,7 +77,7 @@ class Telephone(SignallingReceiver):
         self.microphone_device = None
         self.ringer_device = None
 
-        self.announce()
+        threading.Thread(target=self.__jobs, daemon=True).start()
         RNS.log(f"{self} listening on {RNS.prettyhexrep(self.destination.hash)}", RNS.LOG_DEBUG)
 
     def teardown(self):
@@ -80,10 +86,19 @@ class Telephone(SignallingReceiver):
         self.destination = None
 
     def announce(self):
-        def job():
-            time.sleep(1)
-            self.destination.announce()
-        threading.Thread(target=job, daemon=True).start()
+        self.destination.announce()
+        self.last_announce = time.time()
+
+    def set_allowed(self, allowed):
+        valid_allowed = [self.ALLOW_ALL, self.ALLOW_NONE]
+        if callable(allowed) or type(allowed) == list or allowed in valid_allowed: self.allowed = allowed
+        else: raise TypeError(f"Invalid type for allowed callers: {allowed}")
+
+    def set_announce_interval(self, announce_interval):
+        if not type(announce_interval) == int: raise TypeError(f"Invalid type for announce interval: {announce_interval}")
+        else:
+            if announce_interval < self.ANNOUNCE_INTERVAL_MIN: announce_interval = self.ANNOUNCE_INTERVAL_MIN
+            self.announce_interval = announce_interval
 
     def set_ringing_callback(self, callback):
         if not callable(callback): raise TypeError(f"Invalid callback, {callback} is not callable")
@@ -113,6 +128,19 @@ class Telephone(SignallingReceiver):
         self.ringtone_path = ringtone_path
         self.ringtone_gain = gain
         RNS.log(f"{self} ringtone set to {self.ringtone_path}", RNS.LOG_DEBUG)
+
+    def __jobs(self):
+        while self.destination != None:
+            time.sleep(self.JOB_INTERVAL)
+            if time.time() > self.last_announce+self.ANNOUNCE_INTERVAL:
+                if self.destination != None: self.announce()
+
+    def __is_allowed(self, remote_identity):
+        identity_hash = remote_identity.hash
+        if self.allowed == self.ALLOW_ALL: return True
+        elif self.allowed == self.ALLOW_NONE: return False
+        elif type(self.allowed) == list: return identity_hash in self.allowed
+        elif callable(self.allowed): return self.allowed(identity_hash)
 
     def __timeout_incoming_call_at(self, call, timeout):
         def job():
@@ -159,21 +187,27 @@ class Telephone(SignallingReceiver):
                 self.signal(Signalling.STATUS_BUSY, link)
                 link.teardown()
             else:
-                RNS.log(f"Caller identified as {RNS.prettyhexrep(identity.hash)}, ringing", RNS.LOG_DEBUG)
-                self.active_call = link
-                self.__reset_dialling_pipelines()
-                self.signal(Signalling.STATUS_RINGING, self.active_call)
-                self.__activate_ring_tone()
-                if callable(self.__ringing_callback): self.__ringing_callback(identity)
-                if self.auto_answer:
-                    def cb():
-                        RNS.log(f"Auto-answering call from {RNS.prettyhexrep(identity.hash)} in {RNS.prettytime(self.auto_answer)}", RNS.LOG_DEBUG)
-                        time.sleep(self.auto_answer)
-                        self.answer(identity)
-                    threading.Thread(target=cb, daemon=True).start()
-                
+                if not self.__is_allowed(identity):
+                    RNS.log(f"Identified caller {RNS.prettyhexrep(identity.hash)} was not allowed, signalling busy", RNS.LOG_DEBUG)
+                    self.signal(Signalling.STATUS_BUSY, link)
+                    link.teardown()
+
                 else:
-                    self.__timeout_incoming_call_at(self.active_call, time.time()+self.ring_time)
+                    RNS.log(f"Caller identified as {RNS.prettyhexrep(identity.hash)}, ringing", RNS.LOG_DEBUG)
+                    self.active_call = link
+                    self.__reset_dialling_pipelines()
+                    self.signal(Signalling.STATUS_RINGING, self.active_call)
+                    self.__activate_ring_tone()
+                    if callable(self.__ringing_callback): self.__ringing_callback(identity)
+                    if self.auto_answer:
+                        def cb():
+                            RNS.log(f"Auto-answering call from {RNS.prettyhexrep(identity.hash)} in {RNS.prettytime(self.auto_answer)}", RNS.LOG_DEBUG)
+                            time.sleep(self.auto_answer)
+                            self.answer(identity)
+                        threading.Thread(target=cb, daemon=True).start()
+                    
+                    else:
+                        self.__timeout_incoming_call_at(self.active_call, time.time()+self.ring_time)
 
     def __link_closed(self, link):
         if link == self.active_call:
@@ -456,3 +490,6 @@ class Telephone(SignallingReceiver):
                         RNS.log(f"Call setup complete for {RNS.prettyhexrep(self.active_call.get_remote_identity().hash)}", RNS.LOG_DEBUG)
                         self.call_status = signal
                         if callable(self.__established_callback): self.__established_callback(self.active_call.get_remote_identity())
+
+    def __str__(self):
+        return f"<lxst.telephony/{RNS.hexrep(self.identity.hash, delimit=False)}>"
