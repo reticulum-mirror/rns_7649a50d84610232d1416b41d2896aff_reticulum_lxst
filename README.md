@@ -38,7 +38,7 @@ LXST uses encryption provided by [Reticulum](https://reticulum.network), and thu
 
 This software is in a very early alpha state, and will change rapidly with ongoing development. Consider no APIs stable. Consider everything explosive.
 
-While under early development, the project is kept under a `CC BY-NC-ND 4.0` license. Final target license is GPLv3.
+While under early development, the project is kept under a `CC BY-NC-ND 4.0` license.
 
 ## Installation
 
