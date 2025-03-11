@@ -34,6 +34,29 @@ class LinuxBackend():
 
     def release_recorder(self): pass
 
+class DarwinBackend():
+    SAMPLERATE = 48000
+
+    def __init__(self, preferred_device=None, samplerate=SAMPLERATE):
+        import soundcard
+        self.samplerate = samplerate
+        self.soundcard  = soundcard
+        if preferred_device:
+            try:    self.device = self.soundcard.get_microphone(preferred_device)
+            except: self.device = self.soundcard.default_microphone()
+        else:       self.device = self.soundcard.default_microphone()
+        self.channels   = self.device.channels
+        self.bitdepth   = 32
+        RNS.log(f"Using input device {self.device}", RNS.LOG_DEBUG)
+
+    def flush(self):
+        self.recorder.flush()
+
+    def get_recorder(self, samples_per_frame):
+        return self.device.recorder(samplerate=self.SAMPLERATE, blocksize=samples_per_frame)
+
+    def release_recorder(self): pass
+
 class WindowsBackend():
     SAMPLERATE = 48000
 
@@ -66,6 +89,8 @@ def get_backend():
         return LinuxBackend
     elif RNS.vendor.platformutils.is_windows():
         return WindowsBackend
+    elif RNS.vendor.platformutils.is_darwin():
+        return DarwinBackend
     else:
         return None
 
