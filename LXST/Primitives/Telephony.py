@@ -43,6 +43,7 @@ class Telephone(SignallingReceiver):
         self.destination.set_proof_strategy(RNS.Destination.PROVE_NONE)
         self.destination.set_link_established_callback(self.__incoming_link_established)
         self.allowed = allowed
+        self.blocked = None
         self.last_announce = 0
         self.call_handler_lock = threading.Lock()
         self.pipeline_lock = threading.Lock()
@@ -92,7 +93,11 @@ class Telephone(SignallingReceiver):
     def set_allowed(self, allowed):
         valid_allowed = [self.ALLOW_ALL, self.ALLOW_NONE]
         if callable(allowed) or type(allowed) == list or allowed in valid_allowed: self.allowed = allowed
-        else: raise TypeError(f"Invalid type for allowed callers: {allowed}")
+        else: raise TypeError(f"Invalid type for allowed callers: {type(allowed)}")
+
+    def set_blocked(self, blocked):
+        if type(blocked) == list or blocked == None: self.blocked = blocked
+        else: raise TypeError(f"Invalid type for blocked callers: {type(blocked)}")
 
     def set_announce_interval(self, announce_interval):
         if not type(announce_interval) == int: raise TypeError(f"Invalid type for announce interval: {announce_interval}")
@@ -137,7 +142,8 @@ class Telephone(SignallingReceiver):
 
     def __is_allowed(self, remote_identity):
         identity_hash = remote_identity.hash
-        if self.allowed == self.ALLOW_ALL: return True
+        if   type(self.blocked) == list and identity_hash in self.blocked: return False
+        elif self.allowed == self.ALLOW_ALL: return True
         elif self.allowed == self.ALLOW_NONE: return False
         elif type(self.allowed) == list: return identity_hash in self.allowed
         elif callable(self.allowed): return self.allowed(identity_hash)

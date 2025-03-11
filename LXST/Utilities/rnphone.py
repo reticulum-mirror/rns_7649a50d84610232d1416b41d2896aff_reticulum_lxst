@@ -52,6 +52,7 @@ class ReticulumTelephone():
         self.allowed           = Telephone.ALLOW_ALL
         self.allow_phonebook   = False
         self.allowed_list      = []
+        self.blocked_list      = []
         self.phonebook         = {}
         self.aliases           = {}
         self.names             = {}
@@ -68,6 +69,7 @@ class ReticulumTelephone():
         self.telephone.set_microphone(self.microphone_device)
         self.telephone.set_ringer(self.ringer_device)
         self.telephone.set_allowed(self.allowed)
+        self.telephone.set_blocked(self.blocked_list)
 
     def create_default_config(self):
         rnphone_config = ConfigObj(__default_rnphone_config__.splitlines())
@@ -182,12 +184,22 @@ class ReticulumTelephone():
                 elif type(config["allowed_callers"]) == list:
                     self.allowed = self.__is_allowed
                     for identity_hash in config["allowed_callers"]:
-                        RNS.log(f"Looking at {identity_hash}")
                         if len(identity_hash) == RNS.Reticulum.TRUNCATED_HASHLENGTH//8*2:
                             if identity_hash != RNS.hexrep(self.identity.hash, delimit=False):
                                 try: hash_bytes = bytes.fromhex(identity_hash)
                                 except Exception as e: RNS.log(f"Could not load allowed caller entry {identity_hash}: {e}", RNS.LOG_ERROR)
                                 self.allowed_list.append(hash_bytes)
+
+            if "blocked_callers" in config:
+                blocked_callers = config["blocked_callers"]
+                if not type(blocked_callers) == list: blocked_callers = [blocked_callers]
+                if len(blocked_callers) > 0:
+                    for identity_hash in blocked_callers:
+                        if len(identity_hash) == RNS.Reticulum.TRUNCATED_HASHLENGTH//8*2:
+                            if identity_hash != RNS.hexrep(self.identity.hash, delimit=False):
+                                try: hash_bytes = bytes.fromhex(identity_hash)
+                                except Exception as e: RNS.log(f"Could not load blocked caller entry {identity_hash}: {e}", RNS.LOG_ERROR)
+                                self.blocked_list.append(hash_bytes)
 
         if "phonebook" in self.config:
             self.load_phonebook(self.config["phonebook"])
@@ -702,6 +714,11 @@ __default_rnphone_config__ = """# This is an example rnphone config file.
     # allowed_callers = none
     # allowed_callers = phonebook
     # allowed_callers = b8d80b1b7a9d3147880b366995422a45, fcfb80d4cd3aab7c8710541fb2317974
+
+    # It is also possible to block specific
+    # callers on a per-identity basis.
+
+    # blocked_callers = f3e8c3359b39d36f3baff0a616a73d3e, 5d2d14619dfa0ff06278c17347c14331
 
 [phonebook]
     # You can add entries to the phonebook for
