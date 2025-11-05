@@ -17,8 +17,27 @@ class LinuxBackend():
         else:       self.device = soundcard.default_speaker()
         RNS.log(f"Using output device {self.device}", RNS.LOG_DEBUG)
 
-    def flush(self):
-        self.recorder.flush()
+    def flush(self): self.recorder.flush()
+
+    def get_player(self, samples_per_frame=None):
+        return self.device.player(samplerate=self.samplerate, blocksize=samples_per_frame)
+
+    def release_player(self): pass
+
+class AndroidBackend():
+    SAMPLERATE = 48000
+
+    def __init__(self, preferred_device=None, samplerate=SAMPLERATE):
+        from .Platforms.android import android_soundcard as soundcard
+        self.samplerate = samplerate
+        self.soundcard  = soundcard
+        if preferred_device:
+            try:    self.device = self.soundcard.get_speaker(preferred_device)
+            except: self.device = soundcard.default_speaker()
+        else:       self.device = soundcard.default_speaker()
+        RNS.log(f"Using output device {self.device}", RNS.LOG_DEBUG)
+
+    def flush(self): self.recorder.flush()
 
     def get_player(self, samples_per_frame=None):
         return self.device.player(samplerate=self.samplerate, blocksize=samples_per_frame)
@@ -38,8 +57,7 @@ class DarwinBackend():
         else:       self.device = soundcard.default_speaker()
         RNS.log(f"Using output device {self.device}", RNS.LOG_DEBUG)
 
-    def flush(self):
-        self.recorder.flush()
+    def flush(self): self.recorder.flush()
 
     def get_player(self, samples_per_frame=None):
         return self.device.player(samplerate=self.samplerate, blocksize=samples_per_frame)
@@ -62,8 +80,7 @@ class WindowsBackend():
         else:       self.device = soundcard.default_speaker()
         RNS.log(f"Using output device {self.device}", RNS.LOG_DEBUG)
 
-    def flush(self):
-        self.recorder.flush()
+    def flush(self): self.recorder.flush()
 
     def get_player(self, samples_per_frame=None):
         self.com_init(0)
@@ -72,29 +89,20 @@ class WindowsBackend():
     def release_player(self): self.com_release()
 
 def get_backend():
-    if RNS.vendor.platformutils.is_linux():
-        return LinuxBackend
-    elif RNS.vendor.platformutils.is_windows():
-        return WindowsBackend
-    elif RNS.vendor.platformutils.is_darwin():
-        return DarwinBackend
-    else:
-        return None
+    if RNS.vendor.platformutils.is_linux():     return LinuxBackend
+    elif RNS.vendor.platformutils.is_windows(): return WindowsBackend
+    elif RNS.vendor.platformutils.is_darwin():  return DarwinBackend
+    elif RNS.vendor.platformutils.is_android(): return AndroidBackend
+    else:                                       return None
 
 Backend = get_backend()
 
 class Sink():
-    def handle_frame(self, frame, source):
-        pass
+    def handle_frame(self, frame, source): pass
+    def can_receive(self, from_source=None): return True
 
-    def can_receive(self, from_source=None):
-        return True
-
-class RemoteSink(Sink):
-    pass
-
-class LocalSink(Sink):
-    pass
+class RemoteSink(Sink): pass
+class LocalSink(Sink): pass
 
 class LineSink(LocalSink):
     MAX_FRAMES    = 6
@@ -127,10 +135,8 @@ class LineSink(LocalSink):
 
     def can_receive(self, from_source=None):
         with self.insert_lock:
-            if len(self.frame_deque) < self.buffer_max_height:
-                return True
-            else:
-                return False
+            if len(self.frame_deque) < self.buffer_max_height: return True
+            else:                                              return False
 
     def handle_frame(self, frame, source=None):
         with self.insert_lock:
@@ -142,8 +148,7 @@ class LineSink(LocalSink):
                 RNS.log(f"{self} starting at {self.samples_per_frame} samples per frame, {self.channels} channels", RNS.LOG_DEBUG)
 
             if self.autodigest and not self.should_run:
-                if len(self.frame_deque) >= self.autostart_min:
-                    self.start()
+                if len(self.frame_deque) >= self.autostart_min: self.start()
 
     def start(self):
         if not self.should_run:
@@ -165,7 +170,7 @@ class LineSink(LocalSink):
                     if frames_ready:
                         self.output_latency = len(self.frame_deque)*self.frame_time
                         self.max_latency    = self.buffer_max_height*self.frame_time
-                        self.underrun_at = None
+                        self.underrun_at    = None
 
                         with self.insert_lock: frame = self.frame_deque.popleft()
                         if frame.shape[1] > self.channels: frame = frame[:, 0:self.channels]
@@ -184,10 +189,8 @@ class LineSink(LocalSink):
                             if time.time() > self.underrun_at+(self.frame_time*self.frame_timeout):
                                 RNS.log(f"No frames available on {self}, stopping playback", RNS.LOG_DEBUG)
                                 self.should_run = False
-                            else:
-                                time.sleep(self.frame_time*0.1)
+                            else: time.sleep(self.frame_time*0.1)
 
             self.backend.release_player()
 
-class PacketSink(RemoteSink):
-    pass
+class PacketSink(RemoteSink): pass
