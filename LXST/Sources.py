@@ -35,13 +35,15 @@ class AndroidBackend():
     SAMPLERATE = 48000
 
     def __init__(self, preferred_device=None, samplerate=SAMPLERATE):
-        from .Platforms.android import android_soundcard as soundcard
+        from .Platforms.android import soundcard
         self.samplerate = samplerate
         self.soundcard  = soundcard
         if preferred_device:
             try:    self.device = self.soundcard.get_speaker(preferred_device)
             except: self.device = soundcard.default_speaker()
         else:       self.device = soundcard.default_speaker()
+        self.channels   = self.device.channels
+        self.bitdepth   = 32
         RNS.log(f"Using output device {self.device}", RNS.LOG_DEBUG)
 
     def flush(self): self.recorder.flush()
@@ -258,9 +260,10 @@ class OpusFileSource(LocalSource):
 
     @codec.setter
     def codec(self, codec):
-        if codec == None:                        self._codec = None
+        if codec == None: self._codec = None
         elif not issubclass(type(codec), Codec): raise CodecError(f"Invalid codec specified for {self}")
-        else:                                    self._codec = codec
+        else:
+            self._codec = codec
 
             if self.codec.frame_quanta_ms:
                 if self.target_frame_ms%self.codec.frame_quanta_ms != 0:

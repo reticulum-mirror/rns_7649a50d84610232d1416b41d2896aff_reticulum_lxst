@@ -28,7 +28,7 @@ class AndroidBackend():
     SAMPLERATE = 48000
 
     def __init__(self, preferred_device=None, samplerate=SAMPLERATE):
-        from .Platforms.android import android_soundcard as soundcard
+        from .Platforms.android import soundcard
         self.samplerate = samplerate
         self.soundcard  = soundcard
         if preferred_device:
