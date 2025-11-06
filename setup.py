@@ -43,7 +43,7 @@ setuptools.setup(
     install_requires=["rns>=1.0.1",
                       "lxmf>=0.9.1",
                       "soundcard>=0.4.5",
-                      "numpy=>2.3.4",
+                      "numpy>=2.3.4",
                       "pycodec2",
                       "audioop-lts>=0.2.1;python_version>='3.13'"],
     python_requires=">=3.7",
