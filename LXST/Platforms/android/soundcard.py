@@ -161,16 +161,27 @@ class _Stream:
 
     def __init__(self, id, samplerate, channels, blocksize=None, name='outputstream'):
         self._id = id
-        self._samplerate = samplerate
-        self._name = name
-        self._blocksize = blocksize
-        self.channels = channels
-        self.bit_depth = 16
-        self.audio_track = None
+        self._samplerate  = samplerate
+        self._name        = name
+        self._blocksize   = blocksize
+        self.channels     = channels
+        self.bit_depth    = 16
+        self.audio_track  = None
+        self.audio_record = None
 
         try:
-            Context = autoclass('android.content.Context')
+            Context  = autoclass('android.content.Context')
             activity = autoclass('org.kivy.android.PythonActivity').mActivity
+            if activity == None:
+                RNS.log(f"Could not obtain application context, instance may be running in a service context.", RNS.LOG_DEBUG)
+                android_service = autoclass('org.kivy.android.PythonService').mService
+                activity        = android_service.getApplication().getApplicationContext()
+                if activity    != None: RNS.log(f"Successfully obtained application context from service", RNS.LOG_DEBUG)
+
+            if activity == None:
+                RNS.log(f"Falied to obtain application context for audio stream acquisition", RNS.LOG_ERROR)
+                raise ValueError("No application context available for audio stream acquisition")
+
             self.AudioManager        = activity.getSystemService(autoclass("android.media.AudioManager"))
             self.AudioTrack          = autoclass("android.media.AudioTrack")
             self.AudioFormat         = autoclass("android.media.AudioFormat")
