@@ -291,9 +291,9 @@ class Telephone(SignallingReceiver):
         
         # self.transmit_codec = Codec2(mode=Codec2.CODEC2_700C)
         # self.transmit_codec = Codec2(mode=Codec2.CODEC2_1600)
-        self.transmit_codec = Codec2(mode=Codec2.CODEC2_3200)
+        # self.transmit_codec = Codec2(mode=Codec2.CODEC2_3200)
         # self.transmit_codec = Opus(profile=Opus.PROFILE_VOICE_LOW)
-        # self.transmit_codec = Opus(profile=Opus.PROFILE_VOICE_MEDIUM)
+        self.transmit_codec = Opus(profile=Opus.PROFILE_VOICE_MEDIUM)
         # self.transmit_codec = Opus(profile=Opus.PROFILE_VOICE_HIGH)
         # self.transmit_codec = Opus(profile=Opus.PROFILE_VOICE_MAX)
         # self.transmit_codec = Opus(profile=Opus.PROFILE_AUDIO_MIN)
