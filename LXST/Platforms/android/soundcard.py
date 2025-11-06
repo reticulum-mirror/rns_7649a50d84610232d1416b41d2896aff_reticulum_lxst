@@ -131,9 +131,9 @@ class _AndroidAudio:
                             self.available_devices.append(d)
 
             # TODO: Remove debug
-            RNS.log(f"Discovered audio devices:", RNS.LOG_DEBUG)
-            for d in self.available_devices:
-                RNS.log(f"    {d}", RNS.LOG_DEBUG)
+            # RNS.log(f"Discovered audio devices:", RNS.LOG_DEBUG)
+            # for d in self.available_devices:
+            #     RNS.log(f"    {d}", RNS.LOG_DEBUG)
 
         except Exception as e:
             RNS.log(f"Error while initializing Android audio backend: {e}", RNS.LOG_ERROR)
@@ -566,7 +566,7 @@ class _Player(_Stream):
                         remaining_frame_samples = len(data)
                         written_samples = remaining_frame_samples
                         # TODO: Remove debug
-                        RNS.log(f"Buffer overrun. Target buffer samples {self._target_buffer_samples}. Needed to write {remaining_frame_samples} samples / {len(samples_bytes)} bytes. Discarding {written_samples} input samples.")
+                        # RNS.log(f"Buffer overrun. Target buffer samples {self._target_buffer_samples}. Needed to write {remaining_frame_samples} samples / {len(samples_bytes)} bytes. Discarding {written_samples} input samples.")
 
             data = data[written_samples:]
 
@@ -580,7 +580,7 @@ class _Player(_Stream):
                 delta = underruns-self._last_underruns
                 self._last_underruns = underruns
                 # TODO: Remove debug
-                RNS.log(f"{delta} underruns on {self}")
+                # RNS.log(f"{delta} underruns on {self}")
 
 class _Recorder(_Stream):
     def __init__(self, *args, **kwargs):

@@ -77,6 +77,7 @@ class Telephone(SignallingReceiver):
         self.speaker_device = None
         self.microphone_device = None
         self.ringer_device = None
+        self.low_latency_output = False
 
         threading.Thread(target=self.__jobs, daemon=True).start()
         RNS.log(f"{self} listening on {RNS.prettyhexrep(self.destination.hash)}", RNS.LOG_DEBUG)
@@ -133,6 +134,14 @@ class Telephone(SignallingReceiver):
         self.ringtone_path = ringtone_path
         self.ringtone_gain = gain
         RNS.log(f"{self} ringtone set to {self.ringtone_path}", RNS.LOG_DEBUG)
+
+    def set_low_latency_output(self, enabled):
+        if enabled:
+            self.low_latency_output = True
+            RNS.log(f"{self} low-latency output enabled", RNS.LOG_DEBUG)
+        else:
+            self.low_latency_output = False
+            RNS.log(f"{self} low-latency output disabled", RNS.LOG_DEBUG)
 
     def __jobs(self):
         while self.destination != None:
@@ -251,7 +260,7 @@ class Telephone(SignallingReceiver):
                 self.__start_pipelines()
                 RNS.log(f"Call setup complete for {RNS.prettyhexrep(identity.hash)}", RNS.LOG_DEBUG)
                 if callable(self.__established_callback): self.__established_callback(self.active_call.get_remote_identity())
-                self.audio_output.enable_low_latency()
+                if self.low_latency_output: self.audio_output.enable_low_latency()
                 return True
 
     def hangup(self):
@@ -497,7 +506,7 @@ class Telephone(SignallingReceiver):
                         RNS.log(f"Call setup complete for {RNS.prettyhexrep(self.active_call.get_remote_identity().hash)}", RNS.LOG_DEBUG)
                         self.call_status = signal
                         if callable(self.__established_callback): self.__established_callback(self.active_call.get_remote_identity())
-                        self.audio_output.enable_low_latency()
+                        if self.low_latency_output: self.audio_output.enable_low_latency()
 
     def __str__(self):
         return f"<lxst.telephony/{RNS.hexrep(self.identity.hash, delimit=False)}>"
