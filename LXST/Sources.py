@@ -39,19 +39,19 @@ class AndroidBackend():
         self.samplerate = samplerate
         self.soundcard  = soundcard
         if preferred_device:
-            try:    self.device = self.soundcard.get_speaker(preferred_device)
-            except: self.device = soundcard.default_speaker()
-        else:       self.device = soundcard.default_speaker()
+            try:    self.device = self.soundcard.get_microphone(preferred_device)
+            except: self.device = self.soundcard.default_microphone()
+        else:       self.device = self.soundcard.default_microphone()
         self.channels   = self.device.channels
         self.bitdepth   = 32
-        RNS.log(f"Using output device {self.device}", RNS.LOG_DEBUG)
+        RNS.log(f"Using input device {self.device}", RNS.LOG_DEBUG)
 
     def flush(self): self.recorder.flush()
 
-    def get_player(self, samples_per_frame=None):
-        return self.device.player(samplerate=self.samplerate, blocksize=samples_per_frame)
+    def get_recorder(self, samples_per_frame):
+        return self.device.recorder(samplerate=self.SAMPLERATE, blocksize=samples_per_frame)
 
-    def release_player(self): pass
+    def release_recorder(self): pass
 
 class DarwinBackend():
     SAMPLERATE = 48000
@@ -102,7 +102,7 @@ class WindowsBackend():
     def release_recorder(self): self.com_release()
 
 def get_backend():
-    if RNS.vendor.platformutils.is_linux():     return LinuxBackend
+    if   RNS.vendor.platformutils.is_linux():   return LinuxBackend
     elif RNS.vendor.platformutils.is_windows(): return WindowsBackend
     elif RNS.vendor.platformutils.is_darwin():  return DarwinBackend
     elif RNS.vendor.platformutils.is_android(): return AndroidBackend

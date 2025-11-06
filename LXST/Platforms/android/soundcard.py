@@ -26,12 +26,13 @@ class _AndroidAudio:
     @property
     def source_list(self):
         # TODO: Fetch source list through JNI
-        info = []
+        info = [{"name": "Mock Source", "id": "mocksource0"}]
         return info
 
     def source_info(self, id):
         # TODO: Fetch source info for matched sources through JNI
-        info = []
+        mock_source = {'latency': 0, 'configured_latency': 0, 'channels': 2, 'name': 'Mock Source', 'device.class': 'sound', 'device.api': 'alsa', 'device.bus': 'pci'}
+        info = [mock_source]
         return info[0] # Only first/best match
 
     @property
@@ -58,16 +59,13 @@ atexit.register(_audio._shutdown)
 
 def all_speakers(): return [_Speaker(id=s['id']) for s in _audio.sink_list]
 
-
 def default_speaker():
     name = _audio.server_info["default sink id"]
     return get_speaker(name)
 
-
 def get_speaker(id):
     speakers = _audio.sink_list
     return _Speaker(id=_match_soundcard(id, speakers)['id'])
-
 
 def all_microphones(include_loopback=False, exclude_monitors=True):
     if not exclude_monitors: include_loopback = not exclude_monitors
@@ -75,17 +73,14 @@ def all_microphones(include_loopback=False, exclude_monitors=True):
     if not include_loopback: return [m for m in mics if m._get_info()['device.class'] != 'monitor']
     else: return mics
 
-
 def default_microphone():
     name = _audio.server_info['default source id']
     return get_microphone(name, include_loopback=True)
-
 
 def get_microphone(id, include_loopback=False, exclude_monitors=True):
     if not exclude_monitors: include_loopback = not exclude_monitors
     microphones = _audio.source_list
     return _Microphone(id=_match_soundcard(id, microphones, include_loopback)['id'])
-
 
 def _match_soundcard(id, soundcards, include_loopback=False):
     if not include_loopback:
@@ -103,11 +98,9 @@ def _match_soundcard(id, soundcards, include_loopback=False):
     pattern = ".*".join(id)
     for name, soundcard in soundcards_by_name.items():
         if re.match(pattern, name): return soundcard
-    raise IndexError("no soundcard with id {id}")
-
+    raise IndexError(f"no soundcard with id {id}")
 
 def get_name(): return _audio.name
-
 
 def set_name(name): _audio.name = name
 
@@ -194,7 +187,7 @@ class _Stream:
                 self.audio_format_out = self.AudioFormat.CHANNEL_OUT_STEREO
                 self.audio_format_in  = self.AudioFormat.CHANNEL_OUT_STEREO
 
-            else: raise ValueError("Unsupported channel count {channels} on Android audio backend")
+            else: raise ValueError(f"Unsupported channel count {channels} on Android audio backend")
 
             self.min_buffer_playback  = self.AudioTrack.getMinBufferSize(self._samplerate, self.audio_format_out, self.audio_encoding);
             self.min_buffer_recording = self.AudioTrack.getMinBufferSize(self._samplerate, self.audio_format_in, self.audio_encoding);
@@ -203,7 +196,7 @@ class _Stream:
             self._samplerate = int(self.AudioManager.getProperty(self.AudioManager.PROPERTY_OUTPUT_SAMPLE_RATE))
         
         except Exception as e:
-            RNS.log(f"Could not initialize Android audio context for playback: {e}")
+            RNS.log(f"Could not initialize Android audio context for {self}: {e}", RNS.LOG_ERROR)
             RNS.trace_exception(e)
 
     def __enter__(self):
@@ -213,8 +206,8 @@ class _Stream:
         
         numchannels = self.channels if isinstance(self.channels, int) else len(self.channels)
         self._connect_stream()
-        if not self.audio_track:
-            RNS.log(f"Failed to acquire audio output for {self}", RNS.LOG_ERROR)
+        if not self.audio_track and not self.audio_record:
+            RNS.log(f"Failed to acquire audio stream for {self}", RNS.LOG_ERROR)
             return None
 
         self.channels = numchannels
@@ -224,6 +217,10 @@ class _Stream:
         if self.audio_track:
             self.audio_track.stop()
             self.audio_track.release()
+
+        if self.audio_record:
+            self.audio_record.stop()
+            self.audio_record.release()
 
     @property
     def latency(self):
@@ -254,7 +251,7 @@ class _Player(_Stream):
             self.audio_track.play()
 
         except Exception as e:
-            RNS.log(f"Error while connecting audio stream via JNI: {e}", RNS.LOG_ERROR)
+            RNS.log(f"Error while connecting output audio stream via JNI: {e}", RNS.LOG_ERROR)
             RNS.trace_exception(e)
 
     def play(self, frame):
@@ -278,34 +275,40 @@ class _Player(_Stream):
             # else: RNS.log(f"Wrote {written_samples} samples / {written_bytes} bytes")
 
 class _Recorder(_Stream):
-    # NOTES: Should be more or less good
     def __init__(self, *args, **kwargs):
         super(_Recorder, self).__init__(*args, **kwargs)
+        self.AudioRecord = autoclass("android.media.AudioRecord")
         self._pending_chunk = numpy.zeros((0, ), dtype='float32')
-        self._record_event = threading.Event()
 
     def _connect_stream(self):
-        # TODO: Get some stream handler from JNI and connect the callback
-        def read_callback(stream, nbytes, userdata): self._record_event.set()
-        self._callback = read_callback
+        try:
+            AudioSource = autoclass("android.media.MediaRecorder$AudioSource")
 
-    # TODO: Implement
+            self.audio_record = self.AudioRecord(AudioSource.VOICE_COMMUNICATION, self._samplerate, self.audio_format_in, self.audio_encoding, self.min_buffer_recording)
+            self.audio_record.startRecording()
+
+        except Exception as e:
+            RNS.log(f"Error while connecting input audio stream via JNI: {e}", RNS.LOG_ERROR)
+            RNS.trace_exception(e)
+
     def _record_chunk(self):
-        # TODO: Get readable bytes from recording API
-        readable_bytes = 512
-        while not readable_bytes:
-            if not self._record_event.wait(timeout=1):
-                # TODO: Check error state via JNI
-                error_state = None
-                if error_state: raise RuntimeError(f"Recording failed, stream is in status: {error_state}")
-            self._record_event.clear()
-            readable_bytes = 512 # TODO: Get readable bytes from recording API
+        try:
+            audio_data = bytearray(self.min_buffer_recording)
+            bytes_read = self.audio_record.read(audio_data, 0, self.min_buffer_recording, self.audio_record.READ_NON_BLOCKING)
+            if bytes_read == 0: time.sleep(0.005)
 
-        # TODO: Read actual audio samples
-        chunk = numpy.zeros(512, dtype="float32")
-        return chunk
+            if   bytes_read == self.audio_record.ERROR_INVALID_OPERATION: RNS.log(f"Invalid operation error from JNI on {self}", RNS.LOG_ERROR)
+            elif bytes_read == self.audio_record.ERROR_BAD_VALUE:         RNS.log(f"Bad value error from JNI on {self}", RNS.LOG_ERROR)
+            else:
+                recorded_samples = numpy.frombuffer(audio_data[:bytes_read], dtype="int16")/self.TYPE_MAP_FACTOR
+                return recorded_samples.astype("float32")
 
-    # NOTES: Should be more or less good
+        except Exception as e:
+            RNS.log(f"Error while reading audio chunk: {e}", RNS.LOG_ERROR)
+            RNS.trace_exception(e)
+            return None
+
+
     def record(self, numframes=None):
         if numframes is None: return numpy.reshape(numpy.concatenate([self.flush().ravel(), self._record_chunk()]), [-1, self.channels])
         else:
@@ -325,7 +328,6 @@ class _Recorder(_Stream):
                 captured_data[-1], self._pending_chunk = numpy.split(captured_data[-1], [to_split])
                 return numpy.reshape(numpy.concatenate(captured_data), [-1, self.channels])
 
-    # NOTES: Should be more or less good
     def flush(self):
         last_chunk = numpy.reshape(self._pending_chunk, [-1, self.channels])
         self._pending_chunk = numpy.zeros((0, ), dtype="float32")
