@@ -19,7 +19,7 @@ class LinuxBackend():
 
     def flush(self): self.recorder.flush()
 
-    def get_player(self, samples_per_frame=None):
+    def get_player(self, samples_per_frame=None, low_latency=None):
         return self.device.player(samplerate=self.samplerate, blocksize=samples_per_frame)
 
     def release_player(self): pass
@@ -39,8 +39,8 @@ class AndroidBackend():
 
     def flush(self): self.recorder.flush()
 
-    def get_player(self, samples_per_frame=None):
-        return self.device.player(samplerate=self.samplerate, blocksize=samples_per_frame)
+    def get_player(self, samples_per_frame=None, low_latency=None):
+        return self.device.player(samplerate=self.samplerate, blocksize=samples_per_frame, low_latency=low_latency)
 
     def release_player(self): pass
 
@@ -59,7 +59,7 @@ class DarwinBackend():
 
     def flush(self): self.recorder.flush()
 
-    def get_player(self, samples_per_frame=None):
+    def get_player(self, samples_per_frame=None, low_latency=None):
         return self.device.player(samplerate=self.samplerate, blocksize=samples_per_frame)
 
     def release_player(self): pass
@@ -82,7 +82,7 @@ class WindowsBackend():
 
     def flush(self): self.recorder.flush()
 
-    def get_player(self, samples_per_frame=None):
+    def get_player(self, samples_per_frame=None, low_latency=None):
         self.com_init(0)
         return self.device.player(samplerate=self.samplerate, blocksize=samples_per_frame)
 
@@ -109,7 +109,7 @@ class LineSink(LocalSink):
     AUTOSTART_MIN = 1
     FRAME_TIMEOUT = 8
 
-    def __init__(self, preferred_device=None, autodigest=True):
+    def __init__(self, preferred_device=None, autodigest=True, low_latency=False):
         self.preferred_device     = preferred_device
         self.frame_deque          = deque(maxlen=self.MAX_FRAMES)
         self.should_run           = False
@@ -122,6 +122,7 @@ class LineSink(LocalSink):
         self.autodigest           = autodigest
         self.autostart_min        = self.AUTOSTART_MIN
         self.buffer_max_height    = self.MAX_FRAMES-3
+        self.low_latency          = low_latency
         
         self.preferred_samplerate = Backend.SAMPLERATE
         self.backend              = Backend(preferred_device=self.preferred_device, samplerate=self.preferred_samplerate)
@@ -132,6 +133,8 @@ class LineSink(LocalSink):
         self.frame_time           = None
         self.output_latency       = 0
         self.max_latency          = 0
+        
+        self.__wants_low_latency  = False
 
     def can_receive(self, from_source=None):
         with self.insert_lock:
@@ -159,12 +162,15 @@ class LineSink(LocalSink):
     def stop(self):
         self.should_run = False
 
+    def enable_low_latency(self):
+        self.__wants_low_latency = True
+
     def __digest_job(self):
         with self.digest_lock:
             if not RNS.vendor.platformutils.is_darwin(): backend_samples_per_frame = self.samples_per_frame
             else: backend_samples_per_frame = None
 
-            with self.backend.get_player(samples_per_frame=backend_samples_per_frame) as player:
+            with self.backend.get_player(samples_per_frame=backend_samples_per_frame, low_latency=self.low_latency) as player:
                 while self.should_run:
                     frames_ready = len(self.frame_deque)
                     if frames_ready:
@@ -190,6 +196,14 @@ class LineSink(LocalSink):
                                 RNS.log(f"No frames available on {self}, stopping playback", RNS.LOG_DEBUG)
                                 self.should_run = False
                             else: time.sleep(self.frame_time*0.1)
+
+                    if self.__wants_low_latency:
+                        self.__wants_low_latency = False
+                        if hasattr(player, "enable_low_latency") and callable(player.enable_low_latency):
+                            RNS.log(f"Run-time enabling low-latency mode on {self}", RNS.LOG_DEBUG)
+                            player.enable_low_latency()
+                        else:
+                            RNS.log(f"Could not run-time enable low latency mode on {self}, the operation is not supported by the backend", RNS.LOG_DEBUG)
 
             self.backend.release_player()
 

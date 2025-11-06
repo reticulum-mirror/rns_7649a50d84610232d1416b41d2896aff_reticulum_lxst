@@ -43,7 +43,7 @@ class _AndroidAudio:
                 if activity    != None: RNS.log(f"Successfully obtained application context from service", RNS.LOG_DEBUG)
 
             if activity == None:
-                RNS.log(f"Falied to obtain application context for audio stream acquisition", RNS.LOG_ERROR)
+                RNS.log(f"Failed to obtain application context for audio stream acquisition", RNS.LOG_ERROR)
                 raise ValueError("No application context available for audio stream acquisition")
 
             self.AudioManager        = activity.getSystemService(autoclass("android.media.AudioManager"))
@@ -103,35 +103,37 @@ class _AndroidAudio:
             added_ids = []
             available_devices = self.AudioManager.getAvailableCommunicationDevices()
             for device in available_devices:
-                device_id = device.getId(); device_type = device.getType()
+                device_id = device.getId(); device_type = device.getType(); channel_counts = device.getChannelCounts()
                 if not device_id in added_ids:
-                    type_description = self.device_type_descriptions[device_type] if device_type in self.device_type_descriptions else "Unrecognized"
-                    if not type_description in self.IGNORED_DEVICE_TYPES:
-                        d = {"id": device_id, "name": device.getProductName(), "type": device_type, "type_description": type_description,
-                             "is_source": device.isSource(), "is_sink": device.isSink(), "is_comms": True, "is_virtual": False}
-                        added_ids.append(device_id)
-                        self.available_devices.append(d)
-
-                        if type_description in self.ADD_VIRT_RINGER_TYPES:
-                            d = {"id": device_id+self.VIRTUAL_DEVICE_OFFSET, "name": device.getProductName(), "type": device_type, "type_description": "Ringer Speaker",
-                                 "is_source": device.isSource(), "is_sink": device.isSink(), "is_comms": False, "is_virtual": True}
+                    if 1 in channel_counts or 2 in channel_counts:
+                        type_description = self.device_type_descriptions[device_type] if device_type in self.device_type_descriptions else "Unrecognized"
+                        if not type_description in self.IGNORED_DEVICE_TYPES:
+                            d = {"id": device_id, "name": device.getProductName(), "type": device_type, "type_description": type_description, "channel_counts": channel_counts,
+                                 "is_source": device.isSource(), "is_sink": device.isSink(), "is_comms": True, "is_virtual": False}
+                            added_ids.append(device_id)
                             self.available_devices.append(d)
+
+                            if type_description in self.ADD_VIRT_RINGER_TYPES:
+                                d = {"id": device_id+self.VIRTUAL_DEVICE_OFFSET, "name": device.getProductName(), "type": device_type, "type_description": "Ringer Speaker",
+                                      "channel_counts": channel_counts, "is_source": device.isSource(), "is_sink": device.isSink(), "is_comms": False, "is_virtual": True}
+                                self.available_devices.append(d)
 
             available_devices = self.AudioManager.getDevices(self.AudioManager.GET_DEVICES_ALL)
             for device in available_devices:
-                device_id = device.getId(); device_type = device.getType()
+                device_id = device.getId(); device_type = device.getType(); channel_counts = device.getChannelCounts()
                 if not device_id in added_ids:
-                    type_description = self.device_type_descriptions[device_type] if device_type in self.device_type_descriptions else "Unrecognized"
-                    if not type_description in self.IGNORED_DEVICE_TYPES:
-                        d = {"id": device_id, "name": device.getProductName(), "type": device_type, "type_description": type_description,
-                             "is_source": device.isSource(), "is_sink": device.isSink(), "is_comms": False, "is_virtual": False}
-                        added_ids.append(device_id)
-                        self.available_devices.append(d)
+                    if 1 in channel_counts or 2 in channel_counts:
+                        type_description = self.device_type_descriptions[device_type] if device_type in self.device_type_descriptions else "Unrecognized"
+                        if not type_description in self.IGNORED_DEVICE_TYPES:
+                            d = {"id": device_id, "name": device.getProductName(), "type": device_type, "type_description": type_description, "channel_counts": channel_counts,
+                                 "is_source": device.isSource(), "is_sink": device.isSink(), "is_comms": False, "is_virtual": False}
+                            added_ids.append(device_id)
+                            self.available_devices.append(d)
 
             # TODO: Remove debug
-            # RNS.log(f"Discovered audio devices:", RNS.LOG_DEBUG)
-            # for d in self.available_devices:
-            #     RNS.log(f"    {d}", RNS.LOG_DEBUG)
+            RNS.log(f"Discovered audio devices:", RNS.LOG_DEBUG)
+            for d in self.available_devices:
+                RNS.log(f"    {d}", RNS.LOG_DEBUG)
 
         except Exception as e:
             RNS.log(f"Error while initializing Android audio backend: {e}", RNS.LOG_ERROR)
@@ -156,11 +158,13 @@ class _AndroidAudio:
         return device_list
 
     def source_info(self, source_id):
-        # TODO: Get channel count from channel map
         for d in self.available_devices:
             if d["id"] == source_id:
                 type_description = d["type_description"]; name = d["name"]; did = d["id"]
-                return {"latency": 0, "configured_latency": 0, "channels": 2, "name": f"{type_description} {name}", "device.class": "sound", "device.api": "JNI", "device.bus": "unknown"}
+                if   2 in d["channel_counts"]: channels = 2
+                elif 1 in d["channel_counts"]: channels = 1
+                else: raise ValueError(f"Unsupported channel count on source {type_description} {name} ({source_id})")
+                return {"latency": 0, "configured_latency": 0, "channels": channels, "name": f"{type_description} {name}", "device.class": "sound", "device.api": "JNI", "device.bus": "unknown"}
     
         return None
         
@@ -175,11 +179,13 @@ class _AndroidAudio:
         return device_list
 
     def sink_info(self, sink_id):
-        # TODO: Get channel count from channel map
         for d in self.available_devices:
             if d["id"] == sink_id:
                 type_description = d["type_description"]; name = d["name"]; did = d["id"]
-                return {"latency": 0, "configured_latency": 0, "channels": 2, "name": f"{type_description} {name}", "device.class": "sound", "device.api": "JNI", "device.bus": "unknown"}
+                if   2 in d["channel_counts"]: channels = 2
+                elif 1 in d["channel_counts"]: channels = 1
+                else: raise ValueError(f"Unsupported channel count on source {type_description} {name} ({sink_id})")
+                return {"latency": 0, "configured_latency": 0, "channels": channels, "name": f"{type_description} {name}", "device.class": "sound", "device.api": "JNI", "device.bus": "unknown"}
     
         return None
 
@@ -211,9 +217,9 @@ def default_speaker():
     name = _audio.server_info["default sink id"]
     return get_speaker(name)
 
-def get_speaker(id):
+def get_speaker(id, low_latency=False):
     speakers = _audio.sink_list
-    return _Speaker(id=_match_soundcard(id, speakers)['id'])
+    return _Speaker(id=_match_soundcard(id, speakers)['id'], low_latency=low_latency)
 
 def all_microphones(include_loopback=False, exclude_monitors=True):
     if not exclude_monitors: include_loopback = not exclude_monitors
@@ -250,8 +256,9 @@ def set_name(name): _audio.name = name
 
 
 class _SoundCard:
-    def __init__(self, *, id):
+    def __init__(self, *, id, low_latency=False):
         self._id = id
+        self._low_latency = low_latency
 
     @property
     def channels(self): return self._get_info()['channels']
@@ -270,9 +277,9 @@ class _Speaker(_SoundCard):
     def __repr__(self):
         return '<Speaker {} ({} channels)>'.format(self.name, self.channels)
 
-    def player(self, samplerate, channels=None, blocksize=None):
+    def player(self, samplerate, channels=None, blocksize=None, low_latency=None):
         if channels is None: channels = self.channels
-        return _Player(self._id, samplerate, channels, blocksize)
+        return _Player(self._id, samplerate, channels, blocksize, low_latency)
 
     def play(self, data, samplerate, channels=None, blocksize=None):
         if channels is None: channels = self.channels
@@ -303,17 +310,18 @@ class _Microphone(_SoundCard):
 class _Stream:
     TYPE_MAP_FACTOR = numpy.iinfo("int16").max
 
-    def __init__(self, id, samplerate, channels, blocksize=None, name='outputstream'):
-        self._id = id
-        self._samplerate   = samplerate
-        self._name         = name
-        self._blocksize    = blocksize
-        self.channels      = channels
-        self.bit_depth     = 16
-        self.audio_track   = None
-        self.audio_record  = None
-        self.audio_mode    = "normal"
-        self.enabled_comms = False
+    def __init__(self, id, samplerate, channels, blocksize=None, name="outputstream", low_latency=None):
+        self._id                 = id
+        self._samplerate         = samplerate
+        self._name               = name
+        self._blocksize          = blocksize
+        self.channels            = channels
+        self.bit_depth           = 16
+        self.audio_track         = None
+        self.audio_record        = None
+        self.audio_mode          = "normal"
+        self.enabled_comms       = False
+        self.low_latency_allowed = low_latency
 
         try:
             Context  = autoclass('android.content.Context')
@@ -326,7 +334,7 @@ class _Stream:
                 if activity    != None: RNS.log(f"Successfully obtained application context from service", RNS.LOG_DEBUG)
 
             if activity == None:
-                RNS.log(f"Falied to obtain application context for audio stream acquisition", RNS.LOG_ERROR)
+                RNS.log(f"Failed to obtain application context for audio stream acquisition", RNS.LOG_ERROR)
                 raise ValueError("No application context available for audio stream acquisition")
 
             self.AudioManager        = activity.getSystemService(autoclass("android.media.AudioManager"))
@@ -348,7 +356,6 @@ class _Stream:
                 self.audio_track_profile = self.AudioManager.STREAM_VOICE_CALL
 
             else:
-                RNS.log(f"Setting up selected audio device: {target_device_info}", RNS.LOG_DEBUG)
                 self.audio_track_profile = self.AudioManager.STREAM_VOICE_CALL
 
                 # We can only select by sink for now, as Android insists on auto-
@@ -394,12 +401,12 @@ class _Stream:
                                     RNS.log("Enabled normal audio mode", RNS.LOG_DEBUG)
 
             if self.channels == 1:
-                self.audio_format_out = self.AudioFormat.CHANNEL_IN_MONO
+                self.audio_format_out = self.AudioFormat.CHANNEL_OUT_MONO
                 self.audio_format_in  = self.AudioFormat.CHANNEL_IN_MONO
             
             elif self.channels == 2:
                 self.audio_format_out = self.AudioFormat.CHANNEL_OUT_STEREO
-                self.audio_format_in  = self.AudioFormat.CHANNEL_OUT_STEREO
+                self.audio_format_in  = self.AudioFormat.CHANNEL_IN_STEREO
 
             else: raise ValueError(f"Unsupported channel count {channels} on Android audio backend")
 
@@ -408,6 +415,7 @@ class _Stream:
             self.bytes_per_sample = (self.bit_depth//8)*self.channels
 
             self._samplerate = int(self.AudioManager.getProperty(self.AudioManager.PROPERTY_OUTPUT_SAMPLE_RATE))
+            self.optimal_frames_per_buffer = int(self.AudioManager.getProperty(self.AudioManager.PROPERTY_OUTPUT_FRAMES_PER_BUFFER))
         
         except Exception as e:
             RNS.log(f"Could not initialize Android audio context for {self}: {e}", RNS.LOG_ERROR)
@@ -453,28 +461,48 @@ class _Player(_Stream):
             AudioFormat = autoclass("android.media.AudioFormat")
             AudioFormatBuilder = autoclass("android.media.AudioFormat$Builder")
             AudioTrack = autoclass("android.media.AudioTrack")
+            AudioTrackBuilder = autoclass("android.media.AudioTrack$Builder")
+
+            self._target_buffer_samples = None
+            self._play_engaged = False
+            self._low_latency = False
+            self._low_latency_activated = False
+            self._successful_buffer_frames = None
+            self._last_underruns = 0
+            self._write_mode = AudioTrack.WRITE_BLOCKING
+            self._sample_time = 1.0/self._samplerate
+            self._target_buffer_ms = 125
+            self._overrun_wait = (self._target_buffer_ms*0.1)/1000
+            self._overrun_lock = 0
 
             aa_builder = AudioAttributesBuilder()
             if self.audio_mode == "normal":
                 RNS.log(f"Enabling stream properties for normal mode", RNS.LOG_DEBUG)
                 aa_builder.setUsage(AudioAttributes.USAGE_MEDIA)
                 aa_builder.setContentType(AudioAttributes.CONTENT_TYPE_UNKNOWN)
+                self.performance_mode = AudioTrack.PERFORMANCE_MODE_LOW_LATENCY
+                if self.low_latency_allowed: self._low_latency = True
 
             elif self.audio_mode == "communication":
                 RNS.log(f"Enabling stream properties for communication mode", RNS.LOG_DEBUG)
                 aa_builder.setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION)
                 aa_builder.setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                self.performance_mode = AudioTrack.PERFORMANCE_MODE_LOW_LATENCY
+                if self.low_latency_allowed: self._low_latency = True
 
             elif self.audio_mode == "ringer":
                 RNS.log(f"Enabling stream properties for ringer mode", RNS.LOG_DEBUG)
                 aa_builder.setUsage(AudioAttributes.USAGE_NOTIFICATION_RINGTONE)
                 aa_builder.setContentType(AudioAttributes.CONTENT_TYPE_UNKNOWN)
+                self.performance_mode = AudioTrack.PERFORMANCE_MODE_NONE
 
             else:
                 RNS.log(f"Enabling stream properties for non-specific mode", RNS.LOG_DEBUG)
                 aa_builder.setUsage(AudioAttributes.USAGE_MEDIA)
                 aa_builder.setContentType(AudioAttributes.CONTENT_TYPE_UNKNOWN)
+                self.performance_mode = AudioTrack.PERFORMANCE_MODE_NONE
 
+            aa_builder.setAllowedCapturePolicy(AudioAttributes.ALLOW_CAPTURE_BY_NONE)
             self.audio_attributes = aa_builder.build()
 
             af_builder = AudioFormatBuilder()
@@ -483,12 +511,32 @@ class _Player(_Stream):
             af_builder.setChannelMask(self.audio_format_out)
             self.audio_format = af_builder.build()
 
-            self.audio_track = AudioTrack(self.audio_attributes, self.audio_format, self.min_buffer_playback, self.audio_track_mode, 0)
-            self.audio_track.play()
+            at_builder = AudioTrackBuilder()
+            at_builder.setAudioAttributes(self.audio_attributes)
+            at_builder.setAudioFormat(self.audio_format)
+            at_builder.setBufferSizeInBytes(self.min_buffer_playback)
+            at_builder.setPerformanceMode(self.performance_mode)
+            self.audio_track = at_builder.build()
+            
+            if self._low_latency: self._low_latency_setup()
 
         except Exception as e:
             RNS.log(f"Error while connecting output audio stream via JNI: {e}", RNS.LOG_ERROR)
             RNS.trace_exception(e)
+
+    def enable_low_latency(self):
+        self.low_latency_allowed = True
+        self._low_latency = True
+        self._low_latency_setup()
+        if self.audio_track and self._play_engaged:
+            self.audio_track.setBufferSizeInFrames(self._target_buffer_samples)
+
+    def _low_latency_setup(self):
+        AudioTrack = autoclass("android.media.AudioTrack")
+        self._write_mode = AudioTrack.WRITE_NON_BLOCKING
+        self._target_buffer_samples = int((self._target_buffer_ms/1000.0)/(1.0/self._samplerate))
+        self.audio_track.setBufferSizeInFrames(self._target_buffer_samples)
+        self._low_latency_activated = True
 
     def play(self, frame):
         if not self.audio_track: return
@@ -503,9 +551,36 @@ class _Player(_Stream):
         
         while data.nbytes > 0:
             samples_bytes     = data.ravel().tobytes()
-            written_bytes     = self.audio_track.write(samples_bytes, 0, len(samples_bytes))
+            written_bytes     = self.audio_track.write(samples_bytes, 0, len(samples_bytes), self._write_mode)
             written_samples   = written_bytes//self.bytes_per_sample
+
+            if self._low_latency_activated:
+                if written_samples > 0:
+                    written_time       = written_samples*self._sample_time
+                    min_wait           = written_time*0.25
+                    self._overrun_lock = time.time()+(written_time*1.0)
+                    time.sleep(min_wait)
+                
+                if written_bytes == 0:
+                    if time.time() > self._overrun_lock:
+                        remaining_frame_samples = len(data)
+                        written_samples = remaining_frame_samples
+                        # TODO: Remove debug
+                        RNS.log(f"Buffer overrun. Target buffer samples {self._target_buffer_samples}. Needed to write {remaining_frame_samples} samples / {len(samples_bytes)} bytes. Discarding {written_samples} input samples.")
+
             data = data[written_samples:]
+
+            if not self._play_engaged:
+                self.audio_track.play()
+                self._play_engaged = True
+                if self._target_buffer_samples: self.audio_track.setBufferSizeInFrames(self._target_buffer_samples)
+
+            underruns = self.audio_track.getUnderrunCount()
+            if underruns > self._last_underruns:
+                delta = underruns-self._last_underruns
+                self._last_underruns = underruns
+                # TODO: Remove debug
+                RNS.log(f"{delta} underruns on {self}")
 
 class _Recorder(_Stream):
     def __init__(self, *args, **kwargs):

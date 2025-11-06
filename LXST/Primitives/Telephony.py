@@ -251,6 +251,7 @@ class Telephone(SignallingReceiver):
                 self.__start_pipelines()
                 RNS.log(f"Call setup complete for {RNS.prettyhexrep(identity.hash)}", RNS.LOG_DEBUG)
                 if callable(self.__established_callback): self.__established_callback(self.active_call.get_remote_identity())
+                self.audio_output.enable_low_latency()
                 return True
 
     def hangup(self):
@@ -290,9 +291,9 @@ class Telephone(SignallingReceiver):
         
         # self.transmit_codec = Codec2(mode=Codec2.CODEC2_700C)
         # self.transmit_codec = Codec2(mode=Codec2.CODEC2_1600)
-        # self.transmit_codec = Codec2(mode=Codec2.CODEC2_3200)
+        self.transmit_codec = Codec2(mode=Codec2.CODEC2_3200)
         # self.transmit_codec = Opus(profile=Opus.PROFILE_VOICE_LOW)
-        self.transmit_codec = Opus(profile=Opus.PROFILE_VOICE_MEDIUM)
+        # self.transmit_codec = Opus(profile=Opus.PROFILE_VOICE_MEDIUM)
         # self.transmit_codec = Opus(profile=Opus.PROFILE_VOICE_HIGH)
         # self.transmit_codec = Opus(profile=Opus.PROFILE_VOICE_MAX)
         # self.transmit_codec = Opus(profile=Opus.PROFILE_AUDIO_MIN)
@@ -398,6 +399,7 @@ class Telephone(SignallingReceiver):
                                                       sink=Packetizer(self.active_call, failure_callback=self.__packetizer_failure))
                     
                     self.active_call.audio_source = LinkSource(link=self.active_call, signalling_receiver=self, sink=self.receive_mixer)
+                    self.receive_mixer.set_source_max_frames(self.active_call.audio_source, 2)
                     
                     self.signal(Signalling.STATUS_ESTABLISHED, self.active_call)
 
@@ -495,6 +497,7 @@ class Telephone(SignallingReceiver):
                         RNS.log(f"Call setup complete for {RNS.prettyhexrep(self.active_call.get_remote_identity().hash)}", RNS.LOG_DEBUG)
                         self.call_status = signal
                         if callable(self.__established_callback): self.__established_callback(self.active_call.get_remote_identity())
+                        self.audio_output.enable_low_latency()
 
     def __str__(self):
         return f"<lxst.telephony/{RNS.hexrep(self.identity.hash, delimit=False)}>"
