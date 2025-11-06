@@ -13,8 +13,130 @@ if RNS.vendor.platformutils.get_platform() == "android":
         raise e
 
 class _AndroidAudio:
+    COMMUNICATION_MODE_TYPES = ["Internal Earpiece",
+                                "Bluetooth SCO",
+                                "BLE Headset",
+                                "Hearing Aid",
+                                "Wired Headphones",
+                                "Wired Headset"]
 
-    def __init__(self): self._client_name = None
+    IGNORED_DEVICE_TYPES     = ["Telephony",
+                                "Remote Submix"]
+
+    ADD_VIRT_RINGER_TYPES    = ["Internal Speaker"]
+
+    VIRTUAL_DEVICE_OFFSET    = 0xFFFF
+
+    def __init__(self):
+        self._client_name = None
+        self.available_devices = []
+        self.android_api_version = None
+        try:
+            self.android_api_version = autoclass('android.os.Build$VERSION').SDK_INT
+            Context  = autoclass('android.content.Context')
+            activity = autoclass('org.kivy.android.PythonActivity').mActivity
+            
+            if activity == None:
+                RNS.log(f"Could not obtain application context, instance may be running in a service context.", RNS.LOG_DEBUG)
+                android_service = autoclass('org.kivy.android.PythonService').mService
+                activity        = android_service.getApplication().getApplicationContext()
+                if activity    != None: RNS.log(f"Successfully obtained application context from service", RNS.LOG_DEBUG)
+
+            if activity == None:
+                RNS.log(f"Falied to obtain application context for audio stream acquisition", RNS.LOG_ERROR)
+                raise ValueError("No application context available for audio stream acquisition")
+
+            self.AudioManager        = activity.getSystemService(autoclass("android.media.AudioManager"))
+            self.AudioDeviceInfo     = autoclass("android.media.AudioDeviceInfo")
+            adi                      = self.AudioDeviceInfo
+
+            # Populate device type descriptions from JNI
+            self.device_type_descriptions = {
+                adi.TYPE_AUX_LINE: "Aux Line", # 0x13 - API level 23
+                adi.TYPE_BLUETOOTH_A2DP: "Bluetooth A2DP", # 0x08 - API level 23
+                adi.TYPE_BLUETOOTH_SCO: "Bluetooth SCO", # 0x07 - API level 23
+                adi.TYPE_BUILTIN_EARPIECE: "Internal Earpiece", # 0x01 - API level 23
+                adi.TYPE_BUILTIN_MIC: "Internal Microphone", # 0x0f - API level 23
+                adi.TYPE_BUILTIN_SPEAKER: "Internal Speaker", # 0x02 - API level 23
+                adi.TYPE_DOCK: "Dock", # 0x0d - API level 23
+                adi.TYPE_FM: "FM", # 0x0e - API level 23
+                adi.TYPE_FM_TUNER: "FM Tuner", # 0x10 - API level 23
+                adi.TYPE_HDMI: "HDMI", # 0x09 - API level 23
+                adi.TYPE_HDMI_ARC: "HDMI ARC", # 0x0a - API level 23
+                adi.TYPE_IP: "IP", # 0x14 - API level 23
+                adi.TYPE_LINE_ANALOG: "Analog Line", # 0x05 - API level 23
+                adi.TYPE_LINE_DIGITAL: "Digital Line", # 0x06 - API level 23
+                adi.TYPE_TELEPHONY: "Telephony", # 0x12 - API level 23
+                adi.TYPE_TV_TUNER: "TV Tuner", # 0x11 - API level 23
+                adi.TYPE_UNKNOWN: "Unknown", # 0x00 - API level 23
+                adi.TYPE_USB_ACCESSORY: "USB Accessory", # 0x0c - API level 23
+                adi.TYPE_USB_DEVICE: "USB Device", # 0x0b - API level 23
+                adi.TYPE_WIRED_HEADPHONES: "Wired Headphones", # 0x04 - API level 23
+                adi.TYPE_WIRED_HEADSET: "Wired Headset", # 0x03 - API level 23
+                adi.TYPE_BUS: "Bus", # 0x15 - API level 24
+            }
+
+            if self.android_api_version >= 26:
+                self.device_type_descriptions[adi.TYPE_USB_HEADSET] = "USB Headset" # 0x16 - API level 26
+
+            if self.android_api_version >= 28:
+                self.device_type_descriptions[adi.TYPE_HEARING_AID] = "Hearing Aid" # 0x17 - API level 28
+
+            if self.android_api_version >= 30:
+                self.device_type_descriptions[adi.TYPE_BUILTIN_SPEAKER_SAFE] = "Ringer Speaker" # 0x18 - API level 30
+
+            if self.android_api_version >= 31:
+                self.device_type_descriptions[adi.TYPE_BLE_HEADSET] = "BLE Headset" # 0x1a - API level 31
+                self.device_type_descriptions[adi.TYPE_BLE_SPEAKER] = "BLE Speaker" # 0x1b - API level 31
+                self.device_type_descriptions[adi.TYPE_HDMI_EARC] = "HDMI EARC" # 0x1d - API level 31
+                self.device_type_descriptions[adi.TYPE_REMOTE_SUBMIX] = "Remote Submix" # 0x19 - API level 31
+
+            if self.android_api_version >= 33:
+                self.device_type_descriptions[adi.TYPE_BLE_BROADCAST] = "BLE Broadcast" # 0x1e - API level 33
+                
+            if self.android_api_version >= 34:
+                self.device_type_descriptions[adi.TYPE_DOCK_ANALOG] = "Analog Dock" # 0x1f - API level 34
+            
+            if self.android_api_version >= 36:
+                self.device_type_descriptions[adi.TYPE_MULTICHANNEL_GROUP] = "Multichannel Group" # 0x20 - API level 36
+
+            added_ids = []
+            available_devices = self.AudioManager.getAvailableCommunicationDevices()
+            for device in available_devices:
+                device_id = device.getId(); device_type = device.getType()
+                if not device_id in added_ids:
+                    type_description = self.device_type_descriptions[device_type] if device_type in self.device_type_descriptions else "Unrecognized"
+                    if not type_description in self.IGNORED_DEVICE_TYPES:
+                        d = {"id": device_id, "name": device.getProductName(), "type": device_type, "type_description": type_description,
+                             "is_source": device.isSource(), "is_sink": device.isSink(), "is_comms": True, "is_virtual": False}
+                        added_ids.append(device_id)
+                        self.available_devices.append(d)
+
+                        if type_description in self.ADD_VIRT_RINGER_TYPES:
+                            d = {"id": device_id+self.VIRTUAL_DEVICE_OFFSET, "name": device.getProductName(), "type": device_type, "type_description": "Ringer Speaker",
+                                 "is_source": device.isSource(), "is_sink": device.isSink(), "is_comms": False, "is_virtual": True}
+                            self.available_devices.append(d)
+
+            available_devices = self.AudioManager.getDevices(self.AudioManager.GET_DEVICES_ALL)
+            for device in available_devices:
+                device_id = device.getId(); device_type = device.getType()
+                if not device_id in added_ids:
+                    type_description = self.device_type_descriptions[device_type] if device_type in self.device_type_descriptions else "Unrecognized"
+                    if not type_description in self.IGNORED_DEVICE_TYPES:
+                        d = {"id": device_id, "name": device.getProductName(), "type": device_type, "type_description": type_description,
+                             "is_source": device.isSource(), "is_sink": device.isSink(), "is_comms": False, "is_virtual": False}
+                        added_ids.append(device_id)
+                        self.available_devices.append(d)
+
+            # TODO: Remove debug
+            # RNS.log(f"Discovered audio devices:", RNS.LOG_DEBUG)
+            # for d in self.available_devices:
+            #     RNS.log(f"    {d}", RNS.LOG_DEBUG)
+
+        except Exception as e:
+            RNS.log(f"Error while initializing Android audio backend: {e}", RNS.LOG_ERROR)
+            RNS.trace_exception(e)
+    
     def _shutdown(self): pass
 
     @property
@@ -25,33 +147,59 @@ class _AndroidAudio:
 
     @property
     def source_list(self):
-        # TODO: Fetch source list through JNI
-        info = [{"name": "Mock Source", "id": "mocksource0"}]
-        return info
+        device_list = []
+        for d in self.available_devices:
+            if d["is_source"]:
+                type_description = d["type_description"]; name = d["name"]; did = d["id"]
+                device_list.append({"name": f"{type_description} {name}", "id": did})
 
-    def source_info(self, id):
-        # TODO: Fetch source info for matched sources through JNI
-        mock_source = {'latency': 0, 'configured_latency': 0, 'channels': 2, 'name': 'Mock Source', 'device.class': 'sound', 'device.api': 'alsa', 'device.bus': 'pci'}
-        info = [mock_source]
-        return info[0] # Only first/best match
+        return device_list
 
+    def source_info(self, source_id):
+        # TODO: Get channel count from channel map
+        for d in self.available_devices:
+            if d["id"] == source_id:
+                type_description = d["type_description"]; name = d["name"]; did = d["id"]
+                return {"latency": 0, "configured_latency": 0, "channels": 2, "name": f"{type_description} {name}", "device.class": "sound", "device.api": "JNI", "device.bus": "unknown"}
+    
+        return None
+        
     @property
     def sink_list(self):
-        # TODO: Fetch sink list through JNI
-        info = [{"name": "Mock Sink", "id": "mocksink0"}]
-        return info
+        device_list = []
+        for d in self.available_devices:
+            if d["is_sink"]:
+                type_description = d["type_description"]; name = d["name"]; did = d["id"]
+                device_list.append({"name": f"{type_description} {name}", "id": did})
 
-    def sink_info(self, id):
-        # TODO: Fetch sink info for matched sinks through JNI
-        mock_sink = {'latency': 0, 'configured_latency': 0, 'channels': 2, 'name': 'Mock Sink', 'device.class': 'sound', 'device.api': 'alsa', 'device.bus': 'pci'}
-        info = [mock_sink]
-        return info[0] # Only first/best match
+        return device_list
+
+    def sink_info(self, sink_id):
+        # TODO: Get channel count from channel map
+        for d in self.available_devices:
+            if d["id"] == sink_id:
+                type_description = d["type_description"]; name = d["name"]; did = d["id"]
+                return {"latency": 0, "configured_latency": 0, "channels": 2, "name": f"{type_description} {name}", "device.class": "sound", "device.api": "JNI", "device.bus": "unknown"}
+    
+        return None
 
     @property
     def server_info(self):
-        # TODO: Fetch server/context info through JNI
-        mock_server = {'server version': '1.0.0', 'server name': 'Mock Android audio server', 'default sink id': 'mocksink0', 'default source id': 'mocksource0'}
-        info = mock_server
+        default_source_id = None
+        default_sink_id = None
+        for d in self.available_devices:
+            if d["type_description"] == "Internal Microphone":
+                default_source_id = d["id"]
+                break
+
+        for d in self.available_devices:
+            if d["type_description"] == "Internal Speaker":
+                default_sink_id = d["id"]
+                break
+
+        if not default_source_id: raise OSError("Could not determine default audio input device, no suitable device available")
+        if not default_sink_id: raise OSError("Could not determine default audio output device, no suitable device available")
+        info = {"server version": "1.0.0", "server name": "Android Audio", "default sink id": default_sink_id, "default source id": default_source_id}
         return info
 
 _audio = _AndroidAudio()
@@ -83,12 +231,8 @@ def get_microphone(id, include_loopback=False, exclude_monitors=True):
     return _Microphone(id=_match_soundcard(id, microphones, include_loopback)['id'])
 
 def _match_soundcard(id, soundcards, include_loopback=False):
-    if not include_loopback:
-        soundcards_by_id = {soundcard['id']: soundcard for soundcard in soundcards if not 'monitor' in soundcard['id']}
-        soundcards_by_name = {soundcard['name']: soundcard for soundcard in soundcards if not 'monitor' in soundcard['id']}
-    else:
-        soundcards_by_id = {soundcard['id']: soundcard for soundcard in soundcards}
-        soundcards_by_name = {soundcard['name']: soundcard for soundcard in soundcards}
+    soundcards_by_id = {soundcard['id']: soundcard for soundcard in soundcards}
+    soundcards_by_name = {soundcard['name']: soundcard for soundcard in soundcards}
     
     if id in soundcards_by_id: return soundcards_by_id[id]
 
@@ -161,17 +305,20 @@ class _Stream:
 
     def __init__(self, id, samplerate, channels, blocksize=None, name='outputstream'):
         self._id = id
-        self._samplerate  = samplerate
-        self._name        = name
-        self._blocksize   = blocksize
-        self.channels     = channels
-        self.bit_depth    = 16
-        self.audio_track  = None
-        self.audio_record = None
+        self._samplerate   = samplerate
+        self._name         = name
+        self._blocksize    = blocksize
+        self.channels      = channels
+        self.bit_depth     = 16
+        self.audio_track   = None
+        self.audio_record  = None
+        self.audio_mode    = "normal"
+        self.enabled_comms = False
 
         try:
             Context  = autoclass('android.content.Context')
             activity = autoclass('org.kivy.android.PythonActivity').mActivity
+            
             if activity == None:
                 RNS.log(f"Could not obtain application context, instance may be running in a service context.", RNS.LOG_DEBUG)
                 android_service = autoclass('org.kivy.android.PythonService').mService
@@ -185,11 +332,67 @@ class _Stream:
             self.AudioManager        = activity.getSystemService(autoclass("android.media.AudioManager"))
             self.AudioTrack          = autoclass("android.media.AudioTrack")
             self.AudioFormat         = autoclass("android.media.AudioFormat")
+            self.AudioDeviceInfo     = autoclass("android.media.AudioDeviceInfo")
 
             self.audio_encoding      = self.AudioFormat.ENCODING_PCM_16BIT
             self.audio_track_mode    = self.AudioTrack.MODE_STREAM
-            self.audio_track_profile = self.AudioManager.STREAM_MUSIC # STREAM_VOICE_CALL, STREAM_RING, STREAM_NOTIFICATION
-            
+
+            target_device_info = None
+            for d in _audio.available_devices:
+                if d["id"] == self._id:
+                    target_device_info = d
+                    break
+
+            if not target_device_info:
+                RNS.log(f"Could not acquire target audio device with ID {self._id}, using fallback", RNS.LOG_WARNING)
+                self.audio_track_profile = self.AudioManager.STREAM_VOICE_CALL
+
+            else:
+                RNS.log(f"Setting up selected audio device: {target_device_info}", RNS.LOG_DEBUG)
+                self.audio_track_profile = self.AudioManager.STREAM_VOICE_CALL
+
+                # We can only select by sink for now, as Android insists on auto-
+                # selecting matching sources in the setCommunicationDevice API
+                if target_device_info["is_sink"]:
+                    target_device_id = target_device_info["id"]
+                    if target_device_info["is_virtual"]: target_device_id -= _audio.VIRTUAL_DEVICE_OFFSET
+                    available_devices = self.AudioManager.getAvailableCommunicationDevices()
+                    for device in available_devices:
+                        device_id = device.getId(); device_type = device.getType()
+                        if target_device_id == device_id:
+                            if _audio.android_api_version >= 34:
+                                RNS.log(f"Running on API level {_audio.android_api_version}, setting via setCommunicationDevice", RNS.LOG_DEBUG)
+                                if device_type in _audio.device_type_descriptions and _audio.device_type_descriptions[device_type] in _audio.COMMUNICATION_MODE_TYPES:
+                                    self.AudioManager.setMode(self.AudioManager.MODE_IN_COMMUNICATION)
+                                    self.audio_mode = "communication"
+                                    self.enabled_comms = True
+                                    RNS.log("Enabled communications audio mode", RNS.LOG_DEBUG)
+                                
+                                elif target_device_info["type_description"] == "Ringer Speaker":
+                                    self.AudioManager.setMode(self.AudioManager.MODE_NORMAL)
+                                    self.audio_mode = "ringer"
+                                    RNS.log("Enabled ringer audio mode", RNS.LOG_DEBUG)
+                                
+                                else:
+                                    self.AudioManager.setMode(self.AudioManager.MODE_NORMAL)
+                                    self.audio_mode = "normal"
+                                    RNS.log("Enabled nomal audio mode", RNS.LOG_DEBUG)
+                                
+                                if self.AudioManager.setCommunicationDevice(device):
+                                    RNS.log(f"Successfully configured communication device to: {device} / {device.getType()}", RNS.LOG_DEBUG)
+                                    break
+
+                            else:
+                                RNS.log(f"Running on API level {_audio.android_api_version}, setting via setSpeakerphoneOn", RNS.LOG_DEBUG)
+                                if device_type in _audio.device_type_descriptions and _audio.device_type_descriptions[device_type] in _audio.COMMUNICATION_MODE_TYPES:
+                                    self.AudioManager.setMode(self.AudioManager.MODE_IN_COMMUNICATION)
+                                    self.AudioManager.setSpeakerphoneOn(False)
+                                    RNS.log("Enabled communications audio mode", RNS.LOG_DEBUG)
+                                else:
+                                    self.AudioManager.setMode(self.AudioManager.MODE_NORMAL)
+                                    self.AudioManager.setSpeakerphoneOn(True)
+                                    RNS.log("Enabled normal audio mode", RNS.LOG_DEBUG)
+
             if self.channels == 1:
                 self.audio_format_out = self.AudioFormat.CHANNEL_IN_MONO
                 self.audio_format_in  = self.AudioFormat.CHANNEL_IN_MONO
@@ -233,6 +436,10 @@ class _Stream:
             self.audio_record.stop()
             self.audio_record.release()
 
+        if self.enabled_comms:
+            RNS.log(f"{self} clearing communication device", RNS.LOG_DEBUG)
+            self.AudioManager.clearCommunicationDevice()
+
     @property
     def latency(self):
         # TODO: Get actual stream latency via JNI here
@@ -248,8 +455,26 @@ class _Player(_Stream):
             AudioTrack = autoclass("android.media.AudioTrack")
 
             aa_builder = AudioAttributesBuilder()
-            aa_builder.setUsage(AudioAttributes.USAGE_MEDIA)
-            aa_builder.setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+            if self.audio_mode == "normal":
+                RNS.log(f"Enabling stream properties for normal mode", RNS.LOG_DEBUG)
+                aa_builder.setUsage(AudioAttributes.USAGE_MEDIA)
+                aa_builder.setContentType(AudioAttributes.CONTENT_TYPE_UNKNOWN)
+
+            elif self.audio_mode == "communication":
+                RNS.log(f"Enabling stream properties for communication mode", RNS.LOG_DEBUG)
+                aa_builder.setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION)
+                aa_builder.setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+
+            elif self.audio_mode == "ringer":
+                RNS.log(f"Enabling stream properties for ringer mode", RNS.LOG_DEBUG)
+                aa_builder.setUsage(AudioAttributes.USAGE_NOTIFICATION_RINGTONE)
+                aa_builder.setContentType(AudioAttributes.CONTENT_TYPE_UNKNOWN)
+
+            else:
+                RNS.log(f"Enabling stream properties for non-specific mode", RNS.LOG_DEBUG)
+                aa_builder.setUsage(AudioAttributes.USAGE_MEDIA)
+                aa_builder.setContentType(AudioAttributes.CONTENT_TYPE_UNKNOWN)
+
             self.audio_attributes = aa_builder.build()
 
             af_builder = AudioFormatBuilder()
@@ -281,9 +506,6 @@ class _Player(_Stream):
             written_bytes     = self.audio_track.write(samples_bytes, 0, len(samples_bytes))
             written_samples   = written_bytes//self.bytes_per_sample
             data = data[written_samples:]
-            # TODO: Remove debug
-            # if written_bytes != len(samples_bytes): RNS.log(f"Only wrote {written_bytes} of {len(samples_bytes)}, {written_samples} of {data.shape[0]} samples", RNS.LOG_WARNING)
-            # else: RNS.log(f"Wrote {written_samples} samples / {written_bytes} bytes")
 
 class _Recorder(_Stream):
     def __init__(self, *args, **kwargs):
