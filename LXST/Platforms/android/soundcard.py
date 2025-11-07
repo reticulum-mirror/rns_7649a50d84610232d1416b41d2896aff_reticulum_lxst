@@ -25,6 +25,35 @@ class _AndroidAudio:
 
     ADD_VIRT_RINGER_TYPES    = ["Internal Speaker"]
 
+    DEFAULT_SINK             =  "Internal Speaker"
+    FALLBACK_SINKS           = ["Internal Speaker",
+                                "Ringer Speaker",
+                                "Hearing Aid",
+                                "Wired Headset",
+                                "USB Headset",
+                                "BLE Headset",
+                                "Bluetooth SCO",
+                                "BLE Speaker",
+                                "Bluetooth A2DP",
+                                "Wired Headphones",
+                                "Analog Line",
+                                "Digital Line",
+                                "USB Device",
+                                "USB Accessory",
+                                "HDMI"]
+    
+    DEFAULT_SOURCE           =  "Internal Microphone"
+    FALLBACK_SOURCES         = ["Internal Microphone",
+                                "Hearing Aid",
+                                "Wired Headset",
+                                "USB Headset",
+                                "BLE Headset",
+                                "Bluetooth SCO",
+                                "Analog Line",
+                                "Digital Line",
+                                "USB Device",
+                                "USB Accessory"]
+
     VIRTUAL_DEVICE_OFFSET    = 0xFFFF
 
     def __init__(self):
@@ -193,16 +222,38 @@ class _AndroidAudio:
     def server_info(self):
         default_source_id = None
         default_sink_id = None
+
         for d in self.available_devices:
-            if d["type_description"] == "Internal Microphone":
+            if d["type_description"] == self.DEFAULT_SOURCE:
                 default_source_id = d["id"]
                 break
 
+        if not default_source_id:
+            RNS.log(f"Default sink not found, searching for fallback...", RNS.LOG_DEBUG)
+            for fallback_source in self.FALLBACK_SOURCES:
+                if default_source_id != None: break
+                for d in self.available_devices:
+                    if d["is_source"] == True and d["type_description"] == fallback_source:
+                        RNS.log(f"Found fallback source: {fallback_source}", RNS.LOG_DEBUG)
+                        default_source_id = d["id"]
+                        break
+
         for d in self.available_devices:
-            if d["type_description"] == "Internal Speaker":
+            if d["type_description"] == self.DEFAULT_SINK:
                 default_sink_id = d["id"]
                 break
 
+        if not default_sink_id:
+            RNS.log(f"Default sink not found, searching for fallback...", RNS.LOG_DEBUG)
+            for fallback_sink in self.FALLBACK_SINKS:
+                if default_sink_id != None: break
+                for d in self.available_devices:
+                    if d["is_sink"] == True and d["type_description"] == fallback_sink:
+                        RNS.log(f"Found fallback sink: {fallback_sink}", RNS.LOG_DEBUG)
+                        default_sink_id = d["id"]
+                        break
+
+        if not default_sink_id or not default_source_id: RNS.log(f"Failed to find default devices. Available devices on this system are: {self.available_devices}", RNS.LOG_ERROR)
         if not default_source_id: raise OSError("Could not determine default audio input device, no suitable device available")
         if not default_sink_id: raise OSError("Could not determine default audio output device, no suitable device available")
         info = {"server version": "1.0.0", "server name": "Android Audio", "default sink id": default_sink_id, "default source id": default_source_id}
@@ -396,9 +447,11 @@ class _Stream:
                                     self.AudioManager.setSpeakerphoneOn(False)
                                     RNS.log("Enabled communications audio mode", RNS.LOG_DEBUG)
                                 else:
-                                    self.AudioManager.setMode(self.AudioManager.MODE_NORMAL)
+                                    # API levels < 34, we'll apparently have to set communications mode
+                                    # no matter what, since otherwise the microphone will be muted.
+                                    self.AudioManager.setMode(self.AudioManager.MODE_IN_COMMUNICATION)
                                     self.AudioManager.setSpeakerphoneOn(True)
-                                    RNS.log("Enabled normal audio mode", RNS.LOG_DEBUG)
+                                    RNS.log("Enabled communications audio mode", RNS.LOG_DEBUG)
 
             if self.channels == 1:
                 self.audio_format_out = self.AudioFormat.CHANNEL_OUT_MONO
