@@ -132,32 +132,44 @@ class _AndroidAudio:
             added_ids = []
             available_devices = self.AudioManager.getAvailableCommunicationDevices()
             for device in available_devices:
-                device_id = device.getId(); device_type = device.getType(); channel_counts = device.getChannelCounts()
-                if not device_id in added_ids:
-                    if 1 in channel_counts or 2 in channel_counts:
-                        type_description = self.device_type_descriptions[device_type] if device_type in self.device_type_descriptions else "Unrecognized"
-                        if not type_description in self.IGNORED_DEVICE_TYPES:
-                            d = {"id": device_id, "name": device.getProductName(), "type": device_type, "type_description": type_description, "channel_counts": channel_counts,
-                                 "is_source": device.isSource(), "is_sink": device.isSink(), "is_comms": True, "is_virtual": False}
-                            added_ids.append(device_id)
-                            self.available_devices.append(d)
-
-                            if type_description in self.ADD_VIRT_RINGER_TYPES:
-                                d = {"id": device_id+self.VIRTUAL_DEVICE_OFFSET, "name": device.getProductName(), "type": device_type, "type_description": "Ringer Speaker",
-                                      "channel_counts": channel_counts, "is_source": device.isSource(), "is_sink": device.isSink(), "is_comms": False, "is_virtual": True}
+                try:
+                    device_id = device.getId(); device_type = device.getType(); channel_counts = device.getChannelCounts()
+                    if len(channel_counts) == 0: channel_counts = [1, 2]
+                    if not device_id in added_ids:
+                        if 1 in channel_counts or 2 in channel_counts:
+                            type_description = self.device_type_descriptions[device_type] if device_type in self.device_type_descriptions else "Unrecognized"
+                            if not type_description in self.IGNORED_DEVICE_TYPES:
+                                d = {"id": device_id, "name": device.getProductName(), "type": device_type, "type_description": type_description, "channel_counts": channel_counts,
+                                     "is_source": device.isSource(), "is_sink": device.isSink(), "is_comms": True, "is_virtual": False}
+                                added_ids.append(device_id)
                                 self.available_devices.append(d)
+
+                                if type_description in self.ADD_VIRT_RINGER_TYPES:
+                                    d = {"id": device_id+self.VIRTUAL_DEVICE_OFFSET, "name": device.getProductName(), "type": device_type, "type_description": "Ringer Speaker",
+                                          "channel_counts": channel_counts, "is_source": device.isSource(), "is_sink": device.isSink(), "is_comms": False, "is_virtual": True}
+                                    self.available_devices.append(d)
+                
+                except Exception as e:
+                    RNS.log(f"An error occurred while mapping available communications devices: {e}", RNS.LOG_ERROR)
+                    RNS.trace_exception(e)
 
             available_devices = self.AudioManager.getDevices(self.AudioManager.GET_DEVICES_ALL)
             for device in available_devices:
-                device_id = device.getId(); device_type = device.getType(); channel_counts = device.getChannelCounts()
-                if not device_id in added_ids:
-                    if 1 in channel_counts or 2 in channel_counts:
-                        type_description = self.device_type_descriptions[device_type] if device_type in self.device_type_descriptions else "Unrecognized"
-                        if not type_description in self.IGNORED_DEVICE_TYPES:
-                            d = {"id": device_id, "name": device.getProductName(), "type": device_type, "type_description": type_description, "channel_counts": channel_counts,
-                                 "is_source": device.isSource(), "is_sink": device.isSink(), "is_comms": False, "is_virtual": False}
-                            added_ids.append(device_id)
-                            self.available_devices.append(d)
+                try:
+                    device_id = device.getId(); device_type = device.getType(); channel_counts = device.getChannelCounts()
+                    if len(channel_counts) == 0: channel_counts = [1, 2]
+                    if not device_id in added_ids:
+                        if 1 in channel_counts or 2 in channel_counts:
+                            type_description = self.device_type_descriptions[device_type] if device_type in self.device_type_descriptions else "Unrecognized"
+                            if not type_description in self.IGNORED_DEVICE_TYPES:
+                                d = {"id": device_id, "name": device.getProductName(), "type": device_type, "type_description": type_description, "channel_counts": channel_counts,
+                                     "is_source": device.isSource(), "is_sink": device.isSink(), "is_comms": False, "is_virtual": False}
+                                added_ids.append(device_id)
+                                self.available_devices.append(d)
+                
+                except Exception as e:
+                    RNS.log(f"An error occurred while mapping available audio devices: {e}", RNS.LOG_ERROR)
+                    RNS.trace_exception(e)
 
             # TODO: Remove debug
             # RNS.log(f"Discovered audio devices:", RNS.LOG_DEBUG)
