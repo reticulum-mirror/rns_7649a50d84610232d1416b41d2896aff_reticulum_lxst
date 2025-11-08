@@ -130,7 +130,8 @@ class _AndroidAudio:
                 self.device_type_descriptions[adi.TYPE_MULTICHANNEL_GROUP] = "Multichannel Group" # 0x20 - API level 36
 
             added_ids = []
-            available_devices = self.AudioManager.getAvailableCommunicationDevices()
+            if self.android_api_version < 31: available_devices = []
+            else:                             available_devices = self.AudioManager.getAvailableCommunicationDevices()
             for device in available_devices:
                 try:
                     device_id = device.getId(); device_type = device.getType(); channel_counts = device.getChannelCounts()
@@ -426,7 +427,8 @@ class _Stream:
                 if target_device_info["is_sink"]:
                     target_device_id = target_device_info["id"]
                     if target_device_info["is_virtual"]: target_device_id -= _audio.VIRTUAL_DEVICE_OFFSET
-                    available_devices = self.AudioManager.getAvailableCommunicationDevices()
+                    if _audio.android_api_version < 31:  available_devices = self.AudioManager.getDevices(self.AudioManager.GET_DEVICES_ALL)
+                    else:                                available_devices = self.AudioManager.getAvailableCommunicationDevices()
                     for device in available_devices:
                         device_id = device.getId(); device_type = device.getType()
                         if target_device_id == device_id:
