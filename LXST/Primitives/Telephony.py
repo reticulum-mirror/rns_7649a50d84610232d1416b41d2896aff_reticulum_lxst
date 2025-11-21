@@ -15,8 +15,8 @@ from LXST.Network import SignallingReceiver, Packetizer, LinkSource
 PRIMITIVE_NAME = "telephony"
 
 class Profiles():
-    BANDWIDTH_MINIMUM     = 0x10
-    BANDWIDTH_ULTRA_LOW   = 0x20
+    BANDWIDTH_ULTRA_LOW     = 0x10
+    BANDWIDTH_VERY_LOW   = 0x20
     BANDWIDTH_LOW         = 0x30
     QUALITY_MEDIUM        = 0x40
     QUALITY_HIGH          = 0x50
@@ -27,28 +27,75 @@ class Profiles():
     DEFAULT_PROFILE       = QUALITY_MEDIUM
 
     @staticmethod
+    def available_profiles():
+        return [Profiles.BANDWIDTH_ULTRA_LOW,
+                Profiles.BANDWIDTH_VERY_LOW,
+                Profiles.BANDWIDTH_LOW,
+                Profiles.QUALITY_MEDIUM,
+                Profiles.QUALITY_HIGH,
+                Profiles.QUALITY_MAX,
+                Profiles.LATENCY_LOW,
+                Profiles.LATENCY_ULTRA_LOW]
+
+    @staticmethod
+    def profile_index(profile):
+        if profile in Profiles.available_profiles():  return Profiles.available_profiles().index(profile)
+        else:                                         return None
+
+    @staticmethod
+    def profile_name(profile):
+        if   profile == Profiles.BANDWIDTH_ULTRA_LOW: return "Ultra Low Bandwidth"
+        elif profile == Profiles.BANDWIDTH_VERY_LOW:  return "Very Low Bandwidth"
+        elif profile == Profiles.BANDWIDTH_LOW:       return "Low Bandwidth"
+        elif profile == Profiles.QUALITY_MEDIUM:      return "Medium Quality"
+        elif profile == Profiles.QUALITY_HIGH:        return "High Quality"
+        elif profile == Profiles.QUALITY_MAX:         return "Super High Quality"
+        elif profile == Profiles.LATENCY_LOW:         return "Low Latency"
+        elif profile == Profiles.LATENCY_ULTRA_LOW:   return "Ultra Low Latency"
+        else:                                         return "Default"
+
+    @staticmethod
+    def profile_abbrevation(profile):
+        if   profile == Profiles.BANDWIDTH_ULTRA_LOW: return "ULBW"
+        elif profile == Profiles.BANDWIDTH_VERY_LOW:  return "VLBW"
+        elif profile == Profiles.BANDWIDTH_LOW:       return "LBW"
+        elif profile == Profiles.QUALITY_MEDIUM:      return "MQ"
+        elif profile == Profiles.QUALITY_HIGH:        return "HQ"
+        elif profile == Profiles.QUALITY_MAX:         return "SHQ"
+        elif profile == Profiles.LATENCY_LOW:         return "LL"
+        elif profile == Profiles.LATENCY_ULTRA_LOW:   return "ULL"
+        else:                                         return "DFLT"
+
+    @staticmethod
     def get_codec(profile):
-        if   profile == Profiles.BANDWIDTH_MINIMUM:   return Codec2(mode=Codec2.CODEC2_700C)
-        elif profile == Profiles.BANDWIDTH_ULTRA_LOW: return Codec2(mode=Codec2.CODEC2_1600)
+        if   profile == Profiles.BANDWIDTH_ULTRA_LOW: return Codec2(mode=Codec2.CODEC2_700C)
+        elif profile == Profiles.BANDWIDTH_VERY_LOW:  return Codec2(mode=Codec2.CODEC2_1600)
         elif profile == Profiles.BANDWIDTH_LOW:       return Codec2(mode=Codec2.CODEC2_3200)
         elif profile == Profiles.QUALITY_MEDIUM:      return Opus(profile=Opus.PROFILE_VOICE_MEDIUM)
         elif profile == Profiles.QUALITY_HIGH:        return Opus(profile=Opus.PROFILE_VOICE_HIGH)
         elif profile == Profiles.QUALITY_MAX:         return Opus(profile=Opus.PROFILE_VOICE_MAX)
-        elif profile == Profiles.LATENCY_ULTRA_LOW:   return Opus(profile=Opus.PROFILE_VOICE_MEDIUM)
         elif profile == Profiles.LATENCY_LOW:         return Opus(profile=Opus.PROFILE_VOICE_MEDIUM)
+        elif profile == Profiles.LATENCY_ULTRA_LOW:   return Opus(profile=Opus.PROFILE_VOICE_MEDIUM)
         else:                                         return Opus(profile=Opus.PROFILE_VOICE_MEDIUM)
 
     @staticmethod
     def get_frame_time(profile):
-        if   profile == Profiles.BANDWIDTH_MINIMUM:   return 400
-        elif profile == Profiles.BANDWIDTH_ULTRA_LOW: return 320
-        elif profile == Profiles.BANDWIDTH_LOW:       return 120
+        if   profile == Profiles.BANDWIDTH_ULTRA_LOW: return 400
+        elif profile == Profiles.BANDWIDTH_VERY_LOW:  return 320
+        elif profile == Profiles.BANDWIDTH_LOW:       return 200
         elif profile == Profiles.QUALITY_MEDIUM:      return 60
         elif profile == Profiles.QUALITY_HIGH:        return 60
         elif profile == Profiles.QUALITY_MAX:         return 60
-        elif profile == Profiles.LATENCY_ULTRA_LOW:   return 10
         elif profile == Profiles.LATENCY_LOW:         return 20
+        elif profile == Profiles.LATENCY_ULTRA_LOW:   return 10
         else:                                         return 60
+
+    @staticmethod
+    def next_profile(profile):
+        profile_list = Profiles.available_profiles()
+        if profile in profile_list:
+            return profile_list[(Profiles.profile_index(profile)+1)%len(profile_list)]
+        else: return None
 
 class Signalling():
     STATUS_BUSY           = 0x00
@@ -274,10 +321,15 @@ class Telephone(SignallingReceiver):
 
     @property
     def busy(self):
-        if self.call_status != Signalling.STATUS_AVAILABLE:
-            return True
+        if self.call_status != Signalling.STATUS_AVAILABLE: return True
+        else: return self._external_busy
+
+    @property
+    def active_profile(self):
+        if not self.active_call: return None
         else:
-            return self._external_busy
+            if not hasattr(self.active_call, "profile"): return None
+            else:                                        return self.active_call.profile
     
     def signal(self, signal, link):
         if signal in Signalling.AUTO_STATUS_CODES: self.call_status = signal
