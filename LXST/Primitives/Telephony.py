@@ -312,7 +312,7 @@ class Telephone(SignallingReceiver):
     def __link_closed(self, link):
         if link == self.active_call:
             RNS.log(f"Remote for {RNS.prettyhexrep(link.get_remote_identity().hash)} hung up", RNS.LOG_DEBUG)
-            self.hangup()
+            if not self.active_call.is_terminating: self.hangup()
 
     def set_busy(self, busy):
         self._external_busy = busy
@@ -560,10 +560,11 @@ class Telephone(SignallingReceiver):
                                                 established_callback=self.__outgoing_link_established,
                                                 closed_callback=self.__outgoing_link_closed)
                     
-                    self.active_call.is_incoming  = False
-                    self.active_call.is_outgoing  = True
-                    self.active_call.ring_timeout = False
-                    self.active_call.profile      = profile
+                    self.active_call.is_incoming    = False
+                    self.active_call.is_outgoing    = True
+                    self.active_call.is_terminating = False
+                    self.active_call.ring_timeout   = False
+                    self.active_call.profile        = profile
                     self.__timeout_outgoing_call_at(self.active_call, outgoing_call_timeout)
 
     def __outgoing_link_established(self, link):
@@ -582,6 +583,7 @@ class Telephone(SignallingReceiver):
                     return
                 elif signal == Signalling.STATUS_BUSY:
                     RNS.log("Remote is busy, terminating", RNS.LOG_DEBUG)
+                    self.active_call.is_terminating = True
                     self.__play_busy_tone()
                     self.__disable_dial_tone()
                     self.hangup()
