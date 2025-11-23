@@ -57,7 +57,6 @@ class Codec2(Codec):
         elif frame.shape[1] > self.channels:
             frame = frame[:, 1]
 
-        
         input_samples = frame*self.TYPE_MAP_FACTOR
         input_samples = input_samples.astype(np.int16)
 
