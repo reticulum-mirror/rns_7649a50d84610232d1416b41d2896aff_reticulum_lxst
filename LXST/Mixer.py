@@ -112,6 +112,11 @@ class Mixer(LocalSource, LocalSink):
                             source_count += 1
 
                     if source_count > 0:
+                        mixed_frame = np.clip(mixed_frame, -1.0, 1.0)
+                        if RNS.loglevel >= RNS.LOG_DEBUG:
+                            if mixed_frame.max() >= 1.0 or mixed_frame.min() <= -1.0:
+                                RNS.log(f"Signal clipped on {self}", RNS.LOG_WARNING)
+
                         if self.codec: self.sink.handle_frame(self.codec.encode(mixed_frame), self)
                         else:          self.sink.handle_frame(mixed_frame, self)
                     else:

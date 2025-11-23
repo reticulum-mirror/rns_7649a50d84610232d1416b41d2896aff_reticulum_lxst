@@ -11,6 +11,8 @@ from LXST.Sinks import LineSink
 from LXST.Sources import LineSource, OpusFileSource
 from LXST.Generators import ToneSource
 from LXST.Network import SignallingReceiver, Packetizer, LinkSource
+from LXST.Filters import BandPass, AGC
+
 
 PRIMITIVE_NAME = "telephony"
 
@@ -263,11 +265,12 @@ class Telephone(SignallingReceiver):
         threading.Thread(target=job, daemon=True).start()
 
     def __incoming_link_established(self, link):
-        link.is_incoming  = True
-        link.is_outgoing  = False
-        link.ring_timeout = False
-        link.answered     = False
-        link.profile      = None
+        link.is_incoming    = True
+        link.is_outgoing    = False
+        link.ring_timeout   = False
+        link.answered       = False
+        link.is_terminating = False
+        link.profile        = None
         with self.call_handler_lock:
             if self.active_call or self.busy:
                 RNS.log(f"Incoming call, but line is already active, signalling busy", RNS.LOG_DEBUG)
@@ -509,8 +512,9 @@ class Telephone(SignallingReceiver):
                     if self.active_call.is_incoming: self.signal(Signalling.STATUS_CONNECTING, self.active_call)
 
                     self.__prepare_dialling_pipelines()
+                    filters = [BandPass(250, 8500), AGC()]
                     self.transmit_mixer = Mixer(target_frame_ms=self.target_frame_time_ms, gain=self.transmit_gain)
-                    self.audio_input = LineSource(preferred_device=self.microphone_device, target_frame_ms=self.target_frame_time_ms, codec=Raw(), sink=self.transmit_mixer)
+                    self.audio_input = LineSource(preferred_device=self.microphone_device, target_frame_ms=self.target_frame_time_ms, codec=Raw(), sink=self.transmit_mixer, filters=filters)
                     self.transmit_pipeline = Pipeline(source=self.transmit_mixer,
                                                       codec=self.transmit_codec,
                                                       sink=Packetizer(self.active_call, failure_callback=self.__packetizer_failure))

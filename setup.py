@@ -16,6 +16,10 @@ package_data = {
     "Codecs/libs/pyogg/libs/win_amd64/*",
     "Codecs/libs/pyogg/libs/macos/*",
     "Sounds/*",
+    ],
+"LXST": [
+    "Filters.h",
+    "Filters.c",
     ]
 }
 
