@@ -451,11 +451,12 @@ class Telephone(SignallingReceiver):
         if self.active_call:
             if self.active_call.profile == profile: return
             else:
-                self.active_call.profile = profile
-                self.transmit_codec = Profiles.get_codec(self.active_call.profile)
-                self.target_frame_time_ms = Profiles.get_frame_time(self.active_call.profile)
-                if not from_signalling: self.signal(Signalling.PREFERRED_PROFILE+self.active_call.profile, self.active_call)
-                self.__reconfigure_transmit_pipeline()
+                if self.call_status == Signalling.STATUS_ESTABLISHED:
+                    self.active_call.profile = profile
+                    self.transmit_codec = Profiles.get_codec(self.active_call.profile)
+                    self.target_frame_time_ms = Profiles.get_frame_time(self.active_call.profile)
+                    if not from_signalling: self.signal(Signalling.PREFERRED_PROFILE+self.active_call.profile, self.active_call)
+                    self.__reconfigure_transmit_pipeline()
 
     def __select_call_profile(self, profile=None):
         if profile == None: profile = Profiles.DEFAULT_PROFILE
@@ -543,7 +544,18 @@ class Telephone(SignallingReceiver):
             self.dial_tone.stop()
 
     def __reconfigure_transmit_pipeline(self):
-        pass
+        if self.transmit_pipeline and self.call_status == Signalling.STATUS_ESTABLISHED:
+            self.audio_input.stop()
+            self.transmit_mixer.stop()
+            self.transmit_pipeline.stop()
+            self.transmit_mixer = Mixer(target_frame_ms=self.target_frame_time_ms, gain=self.transmit_gain)
+            self.audio_input = LineSource(preferred_device=self.microphone_device, target_frame_ms=self.target_frame_time_ms, codec=Raw(), sink=self.transmit_mixer, filters=self.active_call.filters)
+            self.transmit_pipeline = Pipeline(source=self.transmit_mixer,
+                                              codec=self.transmit_codec,
+                                              sink=self.active_call.packetizer)
+            self.transmit_mixer.start()
+            self.audio_input.start()
+            self.transmit_pipeline.start()
 
     def __open_pipelines(self, identity):
         with self.pipeline_lock:
@@ -557,15 +569,16 @@ class Telephone(SignallingReceiver):
                     RNS.log(f"Opening audio pipelines for call with {RNS.prettyhexrep(identity.hash)}", RNS.LOG_DEBUG)
                     if self.active_call.is_incoming: self.signal(Signalling.STATUS_CONNECTING, self.active_call)
 
-                    if self.use_agc: filters = [BandPass(250, 8500), AGC()]
-                    else:            filters = [BandPass(250, 8500)]
+                    if self.use_agc: self.active_call.filters = [BandPass(250, 8500), AGC()]
+                    else:            self.active_call.filters = [BandPass(250, 8500)]
 
                     self.__prepare_dialling_pipelines()
+                    self.active_call.packetizer = Packetizer(self.active_call, failure_callback=self.__packetizer_failure)
                     self.transmit_mixer = Mixer(target_frame_ms=self.target_frame_time_ms, gain=self.transmit_gain)
-                    self.audio_input = LineSource(preferred_device=self.microphone_device, target_frame_ms=self.target_frame_time_ms, codec=Raw(), sink=self.transmit_mixer, filters=filters)
+                    self.audio_input = LineSource(preferred_device=self.microphone_device, target_frame_ms=self.target_frame_time_ms, codec=Raw(), sink=self.transmit_mixer, filters=self.active_call.filters)
                     self.transmit_pipeline = Pipeline(source=self.transmit_mixer,
                                                       codec=self.transmit_codec,
-                                                      sink=Packetizer(self.active_call, failure_callback=self.__packetizer_failure))
+                                                      sink=self.active_call.packetizer)
                     
                     self.active_call.audio_source = LinkSource(link=self.active_call, signalling_receiver=self, sink=self.receive_mixer)
                     self.receive_mixer.set_source_max_frames(self.active_call.audio_source, 2)
