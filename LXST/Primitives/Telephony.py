@@ -148,6 +148,7 @@ class Telephone(SignallingReceiver):
         self.auto_answer = auto_answer
         self.receive_gain = receive_gain
         self.transmit_gain = transmit_gain
+        self.use_agc = True
         self.active_call = None
         self.call_status = Signalling.STATUS_AVAILABLE
         self._external_busy = False
@@ -233,6 +234,14 @@ class Telephone(SignallingReceiver):
         self.ringtone_path = ringtone_path
         self.ringtone_gain = gain
         RNS.log(f"{self} ringtone set to {self.ringtone_path}", RNS.LOG_DEBUG)
+
+    def enable_agc(self, enable=True):
+        if enable == True: self.use_agc = True
+        else:              self.use_agc = False
+
+    def disable_agc(self, disable=True):
+        if disable == True: self.use_agc = False
+        else:               self.use_agc = True
 
     def set_low_latency_output(self, enabled):
         if enabled:
@@ -529,8 +538,10 @@ class Telephone(SignallingReceiver):
                     RNS.log(f"Opening audio pipelines for call with {RNS.prettyhexrep(identity.hash)}", RNS.LOG_DEBUG)
                     if self.active_call.is_incoming: self.signal(Signalling.STATUS_CONNECTING, self.active_call)
 
+                    if self.use_agc: filters = [BandPass(250, 8500), AGC()]
+                    else:            filters = [BandPass(250, 8500)]
+
                     self.__prepare_dialling_pipelines()
-                    filters = [BandPass(250, 8500), AGC()]
                     self.transmit_mixer = Mixer(target_frame_ms=self.target_frame_time_ms, gain=self.transmit_gain)
                     self.audio_input = LineSource(preferred_device=self.microphone_device, target_frame_ms=self.target_frame_time_ms, codec=Raw(), sink=self.transmit_mixer, filters=filters)
                     self.transmit_pipeline = Pipeline(source=self.transmit_mixer,
