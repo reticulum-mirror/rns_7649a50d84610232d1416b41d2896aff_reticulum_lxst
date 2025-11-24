@@ -59,5 +59,5 @@ setuptools.setup(
                       "pycodec2>=4.1.0",
                       "audioop-lts>=0.2.1;python_version>='3.13'",
                       "cffi"],
-    python_requires=">=3.7",
+    python_requires=">=3.11",
 )
