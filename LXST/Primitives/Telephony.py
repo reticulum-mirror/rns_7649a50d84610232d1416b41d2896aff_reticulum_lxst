@@ -114,6 +114,7 @@ class Signalling():
 class Telephone(SignallingReceiver):
     RING_TIME             = 60
     WAIT_TIME             = 70
+    CONNECT_TIME          = 5
     DIAL_TONE_FREQUENCY   = 382
     DIAL_TONE_EASE_MS     = 3.14159
     JOB_INTERVAL          = 5
@@ -134,6 +135,7 @@ class Telephone(SignallingReceiver):
         self.call_handler_lock = threading.Lock()
         self.pipeline_lock = threading.Lock()
         self.caller_pipeline_open_lock = threading.Lock()
+        self.establishment_timeout = self.CONNECT_TIME
         self.links = {}
         self.ring_time = ring_time
         self.wait_time = wait_time
@@ -187,6 +189,9 @@ class Telephone(SignallingReceiver):
     def set_blocked(self, blocked):
         if type(blocked) == list or blocked == None: self.blocked = blocked
         else: raise TypeError(f"Invalid type for blocked callers: {type(blocked)}")
+
+    def set_connect_timeout(self, timeout):
+        self.establishment_timeout = timeout
 
     def set_announce_interval(self, announce_interval):
         if not type(announce_interval) == int: raise TypeError(f"Invalid type for announce interval: {announce_interval}")
@@ -260,6 +265,15 @@ class Telephone(SignallingReceiver):
             while time.time()<timeout and self.active_call == call: time.sleep(0.25)
             if self.active_call == call and self.call_status < Signalling.STATUS_ESTABLISHED:
                 RNS.log(f"Timeout on outgoing call to {RNS.prettyhexrep(self.active_call.hash)}, hanging up", RNS.LOG_DEBUG)
+                self.hangup()
+
+        threading.Thread(target=job, daemon=True).start()
+
+    def __timeout_outgoing_establishment_at(self, call, timeout):
+        def job():
+            while time.time()<timeout and self.active_call == call: time.sleep(0.25)
+            if self.active_call == call and self.call_status < Signalling.STATUS_RINGING:
+                RNS.log(f"Timeout on outgoing connection establishment to {RNS.prettyhexrep(self.active_call.hash)}, hanging up", RNS.LOG_DEBUG)
                 self.hangup()
 
         threading.Thread(target=job, daemon=True).start()
@@ -376,10 +390,8 @@ class Telephone(SignallingReceiver):
                 self.audio_output = None
                 self.dial_tone = None
                 self.call_status = Signalling.STATUS_AVAILABLE
-                if remote_identity:
-                    RNS.log(f"Call with {RNS.prettyhexrep(remote_identity.hash)} terminated", RNS.LOG_DEBUG)
-                else:
-                    RNS.log(f"Outgoing call could not be connected, link establishment failed", RNS.LOG_DEBUG)
+                if remote_identity: RNS.log(f"Call with {RNS.prettyhexrep(remote_identity.hash)} terminated", RNS.LOG_DEBUG)
+                else: RNS.log(f"Outgoing call could not be connected, link establishment failed", RNS.LOG_DEBUG)
         
             if callable(self.__ended_callback): self.__ended_callback(remote_identity)
 
@@ -551,6 +563,7 @@ class Telephone(SignallingReceiver):
             if not self.active_call:
                 self.call_status = Signalling.STATUS_CALLING
                 outgoing_call_timeout = time.time()+self.wait_time
+                outgoing_establishment_timeout = time.time()+self.establishment_timeout
                 call_destination = RNS.Destination(identity, RNS.Destination.OUT, RNS.Destination.SINGLE, APP_NAME, PRIMITIVE_NAME)
                 if not RNS.Transport.has_path(call_destination.hash):
                     RNS.log(f"No path known for call to {RNS.prettyhexrep(call_destination.hash)}, requesting path...", RNS.LOG_DEBUG)
@@ -570,6 +583,7 @@ class Telephone(SignallingReceiver):
                     self.active_call.ring_timeout   = False
                     self.active_call.profile        = profile
                     self.__timeout_outgoing_call_at(self.active_call, outgoing_call_timeout)
+                    self.__timeout_outgoing_establishment_at(self.active_call, outgoing_establishment_timeout)
 
     def __outgoing_link_established(self, link):
         RNS.log(f"Link established for call with {link.get_remote_identity()}", RNS.LOG_DEBUG)
