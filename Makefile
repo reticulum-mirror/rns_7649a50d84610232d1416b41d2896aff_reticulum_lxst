@@ -2,7 +2,7 @@ all: release
 
 clean:
 	@echo Cleaning...
-	-sudo rm -rf ./build
+	-rm -rf ./build
 	-rm -rf ./dist
 	-rm -r ./LXST/__pycache__
 
@@ -20,10 +20,11 @@ create_symlinks:
 
 build_wheel:
 	cp ./lib/static/* ./LXST/
+	touch ./skip_extensions
 	python3 setup.py sdist bdist_wheel
-	-(rm ./LXST/*.so)
-	-(rm ./LXST/*.dll)
-	-(rm ./LXST/*.dylib)
+	rm ./skip_extensions
+	-@(rm ./LXST/*.so)
+	-@(rm ./LXST/*.dll)
 
 native_libs:
 	./march_build.sh

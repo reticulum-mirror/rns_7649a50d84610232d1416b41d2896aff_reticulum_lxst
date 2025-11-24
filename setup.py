@@ -4,8 +4,8 @@ from setuptools.command.build_ext import build_ext
 import os
 import platform
 
-if "SKIP_EXTENSIONS" in os.environ: BUILD_EXTENSIONS = False
-else: BUILD_EXTENSIONS = True
+if os.path.isfile("./skip_extensions"): BUILD_EXTENSIONS = False
+else:                                   BUILD_EXTENSIONS = True
 
 if BUILD_EXTENSIONS: print(f"Building LXST with native extensions...")
 else: print(f"Building LXST without native extensions...")
@@ -13,7 +13,10 @@ else: print(f"Building LXST without native extensions...")
 with open("README.md", "r") as fh: long_description = fh.read()
 exec(open("LXST/_version.py", "r").read())
 
-if BUILD_EXTENSIONS: extensions = [ Extension("LXST.filterlib", sources=["LXST/Filters.c"], include_dirs=["LXST"], language="c"), ]
+c_sources = ["LXST/Filters.c"]
+if os.name == "nt": c_sources.append("LXST/Platforms/windows.c")
+
+if BUILD_EXTENSIONS: extensions = [ Extension("LXST.filterlib", sources=c_sources, include_dirs=["LXST"], language="c"), ]
 else:                extensions = []
 
 packages = setuptools.find_packages(exclude=[])
