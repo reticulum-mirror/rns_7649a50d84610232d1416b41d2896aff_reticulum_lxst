@@ -4,7 +4,11 @@ from setuptools.command.build_ext import build_ext
 import os
 import platform
 
-BUILD_EXTENSIONS = True
+if "SKIP_EXTENSIONS" in os.environ: BUILD_EXTENSIONS = False
+else: BUILD_EXTENSIONS = True
+
+if BUILD_EXTENSIONS: print(f"Building LXST with native extensions...")
+else: print(f"Building LXST without native extensions...")
 
 with open("README.md", "r") as fh: long_description = fh.read()
 exec(open("LXST/_version.py", "r").read())
