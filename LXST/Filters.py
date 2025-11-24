@@ -31,6 +31,7 @@ else:
             with open(os.path.join(c_src_path, "Filters.c"), "r") as f: c_src = f.read()
             native_functions = ffi.verify(c_src)
             USE_NATIVE_FILTERS = True
+            RNS.log(f"Successfully compiled and loaded filters library", RNS.LOG_WARNING)
 
     except Exception as e:
         RNS.log(f"Could not compile modules for filter acceleration, falling back to Python filters. This will be slow.", RNS.LOG_WARNING)
