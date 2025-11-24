@@ -8,3 +8,5 @@ lxst*.egg-info
 examples/LXST
 LXST/Utilities/LXST
 RNS
+__pycache__/*
+LXST/__pycache__
