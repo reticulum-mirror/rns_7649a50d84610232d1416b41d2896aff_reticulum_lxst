@@ -1,9 +1,15 @@
 import setuptools
+from setuptools import setup, Extension
+from setuptools.command.build_ext import build_ext
+import os
+import platform
 
-with open("README.md", "r") as fh:
-    long_description = fh.read()
-
+with open("README.md", "r") as fh: long_description = fh.read()
 exec(open("LXST/_version.py", "r").read())
+
+extensions = [
+    Extension("LXST.filterlib", sources=["LXST/Filters.c"], include_dirs=["LXST"], language="c"),
+]
 
 packages = setuptools.find_packages(exclude=[])
 packages.append("LXST.Utilities")
@@ -34,6 +40,8 @@ setuptools.setup(
     url="https://git.unsigned.io/markqvist/lxst",
     packages=packages,
     package_data=package_data,
+    ext_modules=extensions,
+    cmdclass={"build_ext": build_ext},
     classifiers=[
         "Programming Language :: Python :: 3",
         "License :: Other/Proprietary License",
@@ -49,6 +57,7 @@ setuptools.setup(
                       "soundcard>=0.4.5",
                       "numpy>=2.3.4",
                       "pycodec2>=4.1.0",
-                      "audioop-lts>=0.2.1;python_version>='3.13'"],
+                      "audioop-lts>=0.2.1;python_version>='3.13'",
+                      "cffi"],
     python_requires=">=3.7",
 )

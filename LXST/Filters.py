@@ -4,21 +4,34 @@ import time
 import RNS
 import os
 
+USE_NATIVE_FILTERS = False
 if not find_spec("cffi"):
-    USE_NATIVE_FILTERS = False
     RNS.log(f"Could not load CFFI module for filter acceleration, falling back to Python filters. This will be slow.", RNS.LOG_WARNING)
     RNS.log(f"Make sure that the CFFI module is installed and available.", RNS.LOG_WARNING)
 else:
     try:
-        # TODO: Load pre-compiled so/dll
         from cffi import FFI
         import pathlib
-        ffi = FFI()
         c_src_path = pathlib.Path(__file__).parent.resolve()
-        with open(os.path.join(c_src_path, "Filters.h"), "r") as f: ffi.cdef(f.read())
-        with open(os.path.join(c_src_path, "Filters.c"), "r") as f: c_src = f.read()
-        native_functions = ffi.verify(c_src)
-        USE_NATIVE_FILTERS = True
+        ffi = FFI()
+
+        try:
+            filterlib_spec = find_spec("LXST.filterlib")
+            if not filterlib_spec or filterlib_spec.origin == None: raise ImportError("Could not locate pre-compiled LXST.filterlib module")
+            with open(os.path.join(c_src_path, "Filters.h"), "r") as f: ffi.cdef(f.read())
+            native_functions = ffi.dlopen(filterlib_spec.origin)
+            USE_NATIVE_FILTERS = True
+        
+        except Exception as e:
+            RNS.log(f"Could not load pre-compiled LXST filters library. The contained exception was: {e}", RNS.LOG_WARNING)
+            RNS.log(f"Attempting to compile library from source...", RNS.LOG_WARNING)
+
+        if USE_NATIVE_FILTERS == False:
+            with open(os.path.join(c_src_path, "Filters.h"), "r") as f: ffi.cdef(f.read())
+            with open(os.path.join(c_src_path, "Filters.c"), "r") as f: c_src = f.read()
+            native_functions = ffi.verify(c_src)
+            USE_NATIVE_FILTERS = True
+
     except Exception as e:
         RNS.log(f"Could not compile modules for filter acceleration, falling back to Python filters. This will be slow.", RNS.LOG_WARNING)
         RNS.log(f"The contained exception was: {e}", RNS.LOG_WARNING)
