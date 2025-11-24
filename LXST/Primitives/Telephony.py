@@ -155,6 +155,8 @@ class Telephone(SignallingReceiver):
         self.__ringing_callback = None
         self.__established_callback = None
         self.__ended_callback = None
+        self.__busy_callback = None
+        self.__rejected_callback = None
         self.target_frame_time_ms = None
         self.audio_output = None
         self.audio_input = None
@@ -217,6 +219,14 @@ class Telephone(SignallingReceiver):
     def set_ended_callback(self, callback):
         if not callable(callback): raise TypeError(f"Invalid callback, {callback} is not callable")
         self.__ended_callback = callback
+
+    def set_busy_callback(self, callback):
+        if not callable(callback): raise TypeError(f"Invalid callback, {callback} is not callable")
+        self.__busy_callback = callback
+
+    def set_rejected_callback(self, callback):
+        if not callable(callback): raise TypeError(f"Invalid callback, {callback} is not callable")
+        self.__rejected_callback = callback
 
     def set_speaker(self, device):
         self.speaker_device = device
@@ -386,7 +396,7 @@ class Telephone(SignallingReceiver):
                 if self.low_latency_output: self.audio_output.enable_low_latency()
                 return True
 
-    def hangup(self):
+    def hangup(self, reason=None):
         if self.active_call:
             with self.call_handler_lock:
                 terminating_call = self.active_call; self.active_call = None
@@ -408,7 +418,14 @@ class Telephone(SignallingReceiver):
                 if remote_identity: RNS.log(f"Call with {RNS.prettyhexrep(remote_identity.hash)} terminated", RNS.LOG_DEBUG)
                 else: RNS.log(f"Outgoing call could not be connected, link establishment failed", RNS.LOG_DEBUG)
         
-            if callable(self.__ended_callback): self.__ended_callback(remote_identity)
+            if reason == None:
+                if callable(self.__ended_callback):      self.__ended_callback(remote_identity)
+            elif reason == Signalling.STATUS_BUSY:
+                if   callable(self.__busy_callback):     self.__busy_callback(remote_identity)
+                elif callable(self.__ended_callback):    self.__ended_callback(remote_identity)
+            elif reason == Signalling.STATUS_REJECTED:
+                if   callable(self.__rejected_callback): self.__rejected_callback(remote_identity)
+                elif callable(self.__ended_callback):    self.__ended_callback(remote_identity)
 
     def mute_receive(self, mute=True):
         if self.receive_mixer: self.receive_mixer.mute(mute)
@@ -432,11 +449,13 @@ class Telephone(SignallingReceiver):
 
     def switch_profile(self, profile=None, from_signalling=False):
         if self.active_call:
-            self.active_call.profile = profile
-            self.transmit_codec = Profiles.get_codec(self.active_call.profile)
-            self.target_frame_time_ms = Profiles.get_frame_time(self.active_call.profile)
-            if not from_signalling: self.signal(Signalling.PREFERRED_PROFILE+self.active_call.profile, self.active_call)
-            self.__reconfigure_transmit_pipeline()
+            if self.active_call.profile == profile: return
+            else:
+                self.active_call.profile = profile
+                self.transmit_codec = Profiles.get_codec(self.active_call.profile)
+                self.target_frame_time_ms = Profiles.get_frame_time(self.active_call.profile)
+                if not from_signalling: self.signal(Signalling.PREFERRED_PROFILE+self.active_call.profile, self.active_call)
+                self.__reconfigure_transmit_pipeline()
 
     def __select_call_profile(self, profile=None):
         if profile == None: profile = Profiles.DEFAULT_PROFILE
@@ -621,12 +640,12 @@ class Telephone(SignallingReceiver):
                     self.active_call.is_terminating = True
                     self.__play_busy_tone()
                     self.__disable_dial_tone()
-                    self.hangup()
+                    self.hangup(reason=Signalling.STATUS_BUSY)
                 elif signal == Signalling.STATUS_REJECTED:
                     RNS.log("Remote rejected call, terminating", RNS.LOG_DEBUG)
                     self.__play_busy_tone()
                     self.__disable_dial_tone()
-                    self.hangup()
+                    self.hangup(reason=Signalling.STATUS_REJECTED)
                 elif signal == Signalling.STATUS_AVAILABLE:
                     RNS.log("Line available, sending identification", RNS.LOG_DEBUG)
                     self.call_status = signal
