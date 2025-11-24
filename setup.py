@@ -26,6 +26,9 @@ package_data = {
 "LXST": [
     "Filters.h",
     "Filters.c",
+    "filterlib*.so",
+    "filterlib*.dll",
+    "filterlib*.dylib",
     ]
 }
 
