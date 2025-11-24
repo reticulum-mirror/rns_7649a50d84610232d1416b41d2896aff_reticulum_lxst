@@ -4,12 +4,13 @@ from setuptools.command.build_ext import build_ext
 import os
 import platform
 
+BUILD_EXTENSIONS = True
+
 with open("README.md", "r") as fh: long_description = fh.read()
 exec(open("LXST/_version.py", "r").read())
 
-extensions = [
-    Extension("LXST.filterlib", sources=["LXST/Filters.c"], include_dirs=["LXST"], language="c"),
-]
+if BUILD_EXTENSIONS: extensions = [ Extension("LXST.filterlib", sources=["LXST/Filters.c"], include_dirs=["LXST"], language="c"), ]
+else:                extensions = []
 
 packages = setuptools.find_packages(exclude=[])
 packages.append("LXST.Utilities")
