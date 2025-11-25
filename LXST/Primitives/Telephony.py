@@ -169,6 +169,7 @@ class Telephone(SignallingReceiver):
         self.dial_tone = None
         self.dial_tone_frequency = self.DIAL_TONE_FREQUENCY
         self.dial_tone_ease_ms = self.DIAL_TONE_EASE_MS
+        self.busy_tone_seconds = 4.25
         self.transmit_codec = None
         self.receive_codec = None
         self.receive_mixer = None
@@ -250,6 +251,9 @@ class Telephone(SignallingReceiver):
         self.ringtone_path = ringtone_path
         self.ringtone_gain = gain
         RNS.log(f"{self} ringtone set to {self.ringtone_path}", RNS.LOG_DEBUG)
+
+    def set_busy_tone_time(self, seconds=4.25):
+        self.busy_tone_seconds = seconds
 
     def enable_agc(self, enable=True):
         if enable == True: self.use_agc = True
@@ -527,15 +531,16 @@ class Telephone(SignallingReceiver):
             threading.Thread(target=job, daemon=True).start()
 
     def __play_busy_tone(self):
-        if self.audio_output == None or self.receive_mixer == None or self.dial_tone == None: self.__reset_dialling_pipelines()
-        with self.pipeline_lock:
-            window = 0.5; started = time.time()
-            while time.time()-started < 4.25:
-                elapsed = (time.time()-started)%window
-                if elapsed > 0.25: self.__enable_dial_tone()
-                else: self.__mute_dial_tone()
-                time.sleep(0.005)
-            time.sleep(0.5)
+        if self.busy_tone_seconds > 0:
+            if self.audio_output == None or self.receive_mixer == None or self.dial_tone == None: self.__reset_dialling_pipelines()
+            with self.pipeline_lock:
+                window = 0.5; started = time.time()
+                while time.time()-started < self.busy_tone_seconds:
+                    elapsed = (time.time()-started)%window
+                    if elapsed > 0.25: self.__enable_dial_tone()
+                    else: self.__mute_dial_tone()
+                    time.sleep(0.005)
+                time.sleep(0.5)
 
     def __activate_dial_tone(self):
         def job():
