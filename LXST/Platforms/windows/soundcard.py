@@ -45,8 +45,9 @@ import struct
 import collections
 import platform
 import warnings
-
+import threading
 import numpy
+import RNS
 
 _ffi = cffi.FFI()
 _package_dir, _ = os.path.split(__file__)
@@ -58,98 +59,76 @@ with open(os.path.join(_package_dir, 'mediafoundation.h'), 'rt') as f:
 try: _ole32 = _ffi.dlopen('ole32')
 except OSError: _ole32 = _ffi.dlopen('ole32.dll')
 
-
-# use a custom warning subclass that is always shown, instead of once:
-class SoundcardRuntimeWarning(RuntimeWarning):
-    pass
-
-warnings.simplefilter('always', SoundcardRuntimeWarning)
-
-
+def tid(): return threading.get_native_id()
+com_thread_ids = []
 class _COMLibrary:
-    """General functionality of the COM library.
-
-    This class contains functionality related to the COM library, for:
-    - initializing and uninitializing the library.
-    - checking HRESULT codes.
-    - decrementing the reference count of COM objects.
-
-    """
-
     def __init__(self):
-        COINIT_MULTITHREADED = 0x0
-        if platform.win32_ver()[0] == '8':
-            # On Windows 8, according to Microsoft, the first use of 
-            # IAudioClient should be from the STA thread. Calls from 
-            # an MTA thread may result in undefined behavior.
-            
-            # CoInitialize initialises calling thread to STA.
-            hr = _ole32.CoInitialize(_ffi.NULL)
-        else:
-            hr = _ole32.CoInitializeEx(_ffi.NULL, COINIT_MULTITHREADED)
+        self._lock = threading.Lock()
+        self.init_com()
 
-        try:
-            self.check_error(hr)
-
-            # Flag to keep track if this class directly initialized
-            # COM, required for un-initializing in destructor:
-            self.com_loaded = True
-
-        except RuntimeError as e:
-            # Error 0x80010106
-            RPC_E_CHANGED_MODE = 0x80010106
-            if hr + 2 ** 32 == RPC_E_CHANGED_MODE:
-                # COM was already initialized before (e.g. by the
-                # debugger), therefore trying to initialize it again
-                # fails we can safely ignore this error, but we have
-                # to make sure that we don't try to unload it
-                # afterwards therefore we set this flag to False:
-                self.com_loaded = False
+    def init_com(self):
+        with self._lock:
+            if tid() in com_thread_ids:
+                # print(f"ATTEMPT TO REINIT COM FOR {tid()}")
+                return
             else:
-                raise e
+                com_thread_ids.append(tid())
+                COINIT_MULTITHREADED = 0x0
+                print(f"COM INIT FROM SOUNDCARD {tid()}")
+                if platform.win32_ver()[0] == '8': raise OSError("Unsupported Windows version")
+                else: hr = _ole32.CoInitializeEx(_ffi.NULL, COINIT_MULTITHREADED)
+
+                try:
+                    self.check_error(hr)
+                    self.com_loaded = True
+
+                except RuntimeError as e:
+                    print(f"GOT ERROR IN COM INIT: {e}")
+                    # Error 0x80010106
+                    RPC_E_CHANGED_MODE = 0x80010106
+                    if hr + 2 ** 32 == RPC_E_CHANGED_MODE:
+                        # COM was already initialized before (e.g. by the
+                        # debugger), therefore trying to initialize it again
+                        # fails we can safely ignore this error, but we have
+                        # to make sure that we don't try to unload it
+                        # afterwards therefore we set this flag to False:
+                        self.com_loaded = False
+                    else: raise e
+
+    def release_com(self):
+        with self._lock:
+            if tid() in com_thread_ids:
+                com_thread_ids.remove(tid())
+                print(f"COM DE-INIT FROM SOUNDCARD {tid()}")
+                if _ole32 != None: _ole32.CoUninitialize()
+                else: print(f"OLE32 WAS NONE! {tid()}")
+            else: print(f"NO TID FOR COM DE-INIT FROM SOUNDCARD {tid()}")
 
     def __del__(self):
-        # Don't un-initialize COM if COM was not initialized directly
-        # by this class:
-        # TODO: Fix none reference here
         if self.com_loaded:
-            _ole32.CoUninitialize()
+            self.release_com()
 
     @staticmethod
     def check_error(hresult):
-        """Check a given HRESULT for errors.
-
-        Throws an error for non-S_OK HRESULTs.
-
-        """
         # see shared/winerror.h:
         S_OK = 0
         E_NOINTERFACE = 0x80004002
         E_POINTER = 0x80004003
         E_OUTOFMEMORY = 0x8007000e
         E_INVALIDARG = 0x80070057
+        CO_E_NOTINITIALIZED = 0x800401f0
         AUDCLNT_E_UNSUPPORTED_FORMAT = 0x88890008
-        if hresult == S_OK:
-            return
-        elif hresult+2**32 == E_NOINTERFACE:
-            raise RuntimeError('The specified class does not implement the '
-                               'requested interface, or the controlling '
-                               'IUnknown does not expose the requested '
-                               'interface.')
-        elif hresult+2**32 == E_POINTER:
-            raise RuntimeError('An argument is NULL.')
-        elif hresult+2**32 == E_INVALIDARG:
-            raise RuntimeError("invalid argument")
-        elif hresult+2**32 == E_OUTOFMEMORY:
-            raise RuntimeError("out of memory")
-        elif hresult+2**32 == AUDCLNT_E_UNSUPPORTED_FORMAT:
-            raise RuntimeError("unsupported format")
-        else:
-            raise RuntimeError('Error {}'.format(hex(hresult+2**32)))
+        if hresult == S_OK: return
+        elif hresult+2**32 == E_NOINTERFACE: raise RuntimeError("The specified class does not implement the requested interface, or the controlling IUnknown does not expose the requested interface.")
+        elif hresult+2**32 == E_POINTER:     raise RuntimeError("An argument is NULL")
+        elif hresult+2**32 == E_INVALIDARG:  raise RuntimeError("Invalid argument")
+        elif hresult+2**32 == E_OUTOFMEMORY: raise RuntimeError("Out of memory")
+        elif hresult+2**32 == AUDCLNT_E_UNSUPPORTED_FORMAT: raise RuntimeError("Unsupported format")
+        elif hresult+2**32 == CO_E_NOTINITIALIZED:          raise RuntimeError(f"Windows COM context not initialized in {tid()}")
+        else:                                               raise RuntimeError("Error {}".format(hex(hresult+2**32)))
 
     @staticmethod
     def release(ppObject):
-        """Decrement reference count on COM object."""
         if ppObject[0] != _ffi.NULL:
             ppObject[0][0].lpVtbl.Release(ppObject[0])
             ppObject[0] = _ffi.NULL
@@ -157,32 +136,25 @@ class _COMLibrary:
 _com = _COMLibrary()
 
 def all_speakers():
-    """A list of all connected speakers."""
+    print(f"ALL SPEAKERS {tid()}")
+    # if not tid() in com_thread_ids: _com.init_com()
     with _DeviceEnumerator() as enum:
         return [_Speaker(dev) for dev in enum.all_devices('speaker')]
 
 def default_speaker():
-    """The default speaker of the system."""
+    print(f"DEFAULT SPEAKER {tid()}")
+    # if not tid() in com_thread_ids: _com.init_com()
     with _DeviceEnumerator() as enum:
         return _Speaker(enum.default_device('speaker'))
 
 def get_speaker(id):
-    """Get a specific speaker by a variety of means.
-
-    id can be an a WASAPI id, a substring of the speaker name, or a
-    fuzzy-matched pattern for the speaker name.
-
-    """
+    print(f"GET SPEAKER {tid()}")
+    # if not tid() in com_thread_ids: _com.init_com()
     return _match_device(id, all_speakers())
 
 def all_microphones(include_loopback=False):
-    """A list of all connected microphones.
-
-    By default, this does not include loopback (virtual microphones
-    that record the output of a speaker).
-
-    """
-
+    print(f"ALL MICROPHONES {tid()}")
+    # if not tid() in com_thread_ids: _com.init_com()
     with _DeviceEnumerator() as enum:
         if include_loopback:
             return [_Microphone(dev, isloopback=True) for dev in enum.all_devices('speaker')] + [_Microphone(dev) for dev in enum.all_devices('microphone')]
@@ -190,26 +162,17 @@ def all_microphones(include_loopback=False):
             return [_Microphone(dev) for dev in enum.all_devices('microphone')]
 
 def default_microphone():
-    """The default microphone of the system."""
+    print(f"DEFAULT MICROPHONE {tid()}")
+    # if not tid() in com_thread_ids: _com.init_com()
     with _DeviceEnumerator() as enum:
         return _Microphone(enum.default_device('microphone'))
 
 def get_microphone(id, include_loopback=False):
-    """Get a specific microphone by a variety of means.
-
-    id can be a WASAPI id, a substring of the microphone name, or a
-    fuzzy-matched pattern for the microphone name.
-
-    """
+    print(f"GET MICROPHONE {tid()}")
+    # if not tid() in com_thread_ids: _com.init_com()
     return _match_device(id, all_microphones(include_loopback))
 
 def _match_device(id, devices):
-    """Find id in a list of devices.
-
-    id can be a WASAPI id, a substring of the device name, or a
-    fuzzy-matched pattern for the microphone name.
-
-    """
     devices_by_id = {device.id: device for device in devices}
     devices_by_name = {device.name: device for device in devices}
     if id in devices_by_id:
@@ -239,13 +202,8 @@ def _guidof(uuid_str):
     return IID
 
 
-def get_name():
-    raise NotImplementedError()
-
-
-def set_name(name):
-    raise NotImplementedError()
-
+def get_name(): raise NotImplementedError()
+def set_name(name): raise NotImplementedError()
 
 class _DeviceEnumerator:
     """Wrapper class for an IMMDeviceEnumerator**.
@@ -256,6 +214,7 @@ class _DeviceEnumerator:
     """
 
     def __init__(self):
+        _com.init_com()
         self._ptr = _ffi.new('IMMDeviceEnumerator **')
         IID_MMDeviceEnumerator = _guidof("{BCDE0395-E52F-467C-8E3D-C4579291692E}")
         IID_IMMDeviceEnumerator = _guidof("{A95664D2-9614-4F35-A746-DE8DB63617E6}")
@@ -266,6 +225,7 @@ class _DeviceEnumerator:
         _com.check_error(hr)
 
     def __enter__(self):
+        _com.init_com()
         return self
 
     def __exit__(self, exc_type, exc_value, traceback):
@@ -275,25 +235,15 @@ class _DeviceEnumerator:
         _com.release(self._ptr)
 
     def _device_id(self, device_ptr):
-        """Returns the WASAPI device ID for an IMMDevice**."""
         ppId = _ffi.new('LPWSTR *')
         hr = device_ptr[0][0].lpVtbl.GetId(device_ptr[0], ppId)
         _com.check_error(hr)
         return _ffi.string(ppId[0])
 
     def all_devices(self, kind):
-        """Yields all sound cards of a given kind.
-
-        Kind may be 'speaker' or 'microphone'.
-        Sound cards are returned as _Device objects.
-
-        """
-        if kind == 'speaker':
-            data_flow = 0 # render
-        elif kind == 'microphone':
-            data_flow = 1 # capture
-        else:
-            raise TypeError('Invalid kind: {}'.format(kind))
+        if kind == 'speaker': data_flow = 0 # render
+        elif kind == 'microphone': data_flow = 1 # capture
+        else: raise TypeError('Invalid kind: {}'.format(kind))
 
         DEVICE_STATE_ACTIVE = 0x1
         ppDevices = _ffi.new('IMMDeviceCollection **')
@@ -306,18 +256,9 @@ class _DeviceEnumerator:
             yield device
 
     def default_device(self, kind):
-        """Returns the default sound card of a given kind.
-
-        Kind may be 'speaker' or 'microphone'.
-        Default sound card is returned as a _Device object.
-
-        """
-        if kind == 'speaker':
-            data_flow = 0 # render
-        elif kind == 'microphone':
-            data_flow = 1 # capture
-        else:
-            raise TypeError('Invalid kind: {}'.format(kind))
+        if kind == 'speaker': data_flow = 0 # render
+        elif kind == 'microphone': data_flow = 1 # capture
+        else: raise TypeError('Invalid kind: {}'.format(kind))
 
         ppDevice = _ffi.new('IMMDevice **')
         eConsole = 0
@@ -342,6 +283,7 @@ class _DeviceCollection:
 
     """
     def __init__(self, ptr):
+        _com.init_com()
         self._ptr = ptr
 
     def __del__(self):
@@ -372,6 +314,7 @@ class _PropVariant:
 
     """
     def __init__(self):
+        _com.init_com()
         self.ptr = _ole32.CoTaskMemAlloc(_ffi.sizeof('PROPVARIANT'))
         self.ptr = _ffi.cast("PROPVARIANT *", self.ptr)
 
@@ -390,6 +333,7 @@ class _Device:
     """
 
     def __init__(self, id):
+        _com.init_com()
         self._id = id
 
     def _device_ptr(self):
@@ -667,6 +611,7 @@ class _Player(_AudioClient):
         return self.buffersize-self.currentpadding
 
     def __enter__(self):
+        _com.init_com()
         self._ppRenderClient = self._render_client()
         hr = self._ptr[0][0].lpVtbl.Start(self._ptr[0])
         _com.check_error(hr)
@@ -677,6 +622,7 @@ class _Player(_AudioClient):
         _com.check_error(hr)
         _com.release(self._ppRenderClient)
         _com.release(self._ptr)
+        _com.release_com()
 
     def play(self, data):
         """Play some audio data.
@@ -725,18 +671,6 @@ class _Player(_AudioClient):
             data = data[towrite:]
 
 class _Recorder(_AudioClient):
-    """A context manager for an active input stream.
-
-    Audio recording is available as soon as the context manager is
-    entered. Recorded audio data can be read using the `record`
-    method. If no audio data is available, `record` will block until
-    the requested amount of audio data has been recorded.
-
-    This context manager can only be entered once, and can not be used
-    after it is closed.
-
-    """
-
     # https://msdn.microsoft.com/en-us/library/windows/desktop/dd370800(v=vs.85).aspx
     def _capture_client(self):
         iid = _guidof("{C8ADBD64-E71E-48a0-A4DE-185C395CD317}")
@@ -764,6 +698,7 @@ class _Recorder(_AudioClient):
         return pSize[0]
 
     def __enter__(self):
+        _com.init_com()
         self._ppCaptureClient = self._capture_client()
         hr = self._ptr[0][0].lpVtbl.Start(self._ptr[0])
         _com.check_error(hr)
@@ -776,6 +711,7 @@ class _Recorder(_AudioClient):
         _com.check_error(hr)
         _com.release(self._ppCaptureClient)
         _com.release(self._ptr)
+        _com.release_com()
 
     def _record_chunk(self):
         """Record one chunk of audio data, as returned by WASAPI
