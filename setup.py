@@ -36,6 +36,9 @@ package_data = {
     "Filters.c",
     "filterlib*.so",
     "filterlib*.pyd",
+    "Platforms/linux/pulseaudio.h",
+    "Platforms/darwin/coreaudio.h",
+    "Platforms/windows/mediafoundation.h",
     ]
 }
 

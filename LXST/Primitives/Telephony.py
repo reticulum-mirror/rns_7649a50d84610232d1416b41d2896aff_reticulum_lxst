@@ -124,10 +124,16 @@ class Telephone(SignallingReceiver):
     ALLOW_NONE            = 0xFE
 
     @staticmethod
-    def available_outputs(): return LXST.Sources.Backend().soundcard.all_speakers()
+    def available_outputs(): return LXST.Sinks.Backend().soundcard.all_speakers()
     
     @staticmethod
-    def available_inputs(): return LXST.Sinks.Backend().soundcard.all_microphones()
+    def available_inputs(): return LXST.Sources.Backend().soundcard.all_microphones()
+
+    @staticmethod
+    def default_output(): return LXST.Sinks.Backend().soundcard.default_speaker()
+
+    @staticmethod
+    def default_input(): return LXST.Sinks.Backend().soundcard.default_microphone()
 
     def __init__(self, identity, ring_time=RING_TIME, wait_time=WAIT_TIME, auto_answer=None, allowed=ALLOW_ALL, receive_gain=0.0, transmit_gain=0.0):
         super().__init__()

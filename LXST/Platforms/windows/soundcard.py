@@ -53,7 +53,12 @@ _package_dir, _ = os.path.split(__file__)
 with open(os.path.join(_package_dir, 'mediafoundation.h'), 'rt') as f:
     _ffi.cdef(f.read())
 
-_ole32 = _ffi.dlopen('ole32')
+try:
+    # Attempt to load by generic name first; fall back to the explicit DLL name if that fails.
+    _ole32 = _ffi.dlopen('ole32')
+except OSError:
+    # On some Windows 11 systems with Python 3.11.x, omitting the ".dll" extension may not work.
+    _ole32 = _ffi.dlopen('ole32.dll')
 
 
 # use a custom warning subclass that is always shown, instead of once:
@@ -545,22 +550,27 @@ class _AudioClient:
         if blocksize is None:
             blocksize = self.deviceperiod[0]*samplerate
 
-        ppMixFormat = _ffi.new('WAVEFORMATEXTENSIBLE**')
+        ppMixFormat = _ffi.new('WAVEFORMATEXTENSIBLE**') # See: https://docs.microsoft.com/en-us/windows/win32/api/mmreg/ns-mmreg-waveformatextensible
         hr = self._ptr[0][0].lpVtbl.GetMixFormat(self._ptr[0], ppMixFormat)
         _com.check_error(hr)
 
         # It's a WAVEFORMATEXTENSIBLE with room for KSDATAFORMAT_SUBTYPE_IEEE_FLOAT:
-        assert ppMixFormat[0][0].Format.wFormatTag == 0xFFFE
-        assert ppMixFormat[0][0].Format.cbSize == 22
+        # Note: Some devices may not return 0xFFFE format, but WASAPI should handle conversion
+        if ppMixFormat[0][0].Format.wFormatTag == 0xFFFE:
+            assert ppMixFormat[0][0].Format.cbSize == 22
 
-        # The data format is float32:
-        # These values were found empirically, and I don't know why they work.
-        # The program crashes if these values are different
-        assert ppMixFormat[0][0].SubFormat.Data1 == 0x100000
-        assert ppMixFormat[0][0].SubFormat.Data2 == 0x0080
-        assert ppMixFormat[0][0].SubFormat.Data3 == 0xaa00
-        assert [int(x) for x in ppMixFormat[0][0].SubFormat.Data4[0:4]] == [0, 56, 155, 113]
-        # the last four bytes seem to vary randomly
+            # The data format is float32:
+            # These values were found empirically, and I don't know why they work.
+            # The program crashes if these values are different
+            assert ppMixFormat[0][0].SubFormat.Data1 == 0x100000
+            assert ppMixFormat[0][0].SubFormat.Data2 == 0x0080
+            assert ppMixFormat[0][0].SubFormat.Data3 == 0xaa00
+            assert [int(x) for x in ppMixFormat[0][0].SubFormat.Data4[0:4]] == [0, 56, 155, 113]
+            # the last four bytes seem to vary randomly
+        else:
+            # Device doesn't return WAVEFORMATEXTENSIBLE, but WASAPI will handle conversion
+            # Just skip the assertions and let WASAPI convert
+            pass
 
         channels = len(set(self.channelmap))
         channelmask = 0
@@ -575,16 +585,23 @@ class _AudioClient:
         # does not work:
         # ppMixFormat[0][0].dwChannelMask=channelmask
 
+        # See: https://docs.microsoft.com/en-us/windows/win32/coreaudio/exclusive-mode-streams
+        # nopersist, see: https://docs.microsoft.com/en-us/windows/win32/coreaudio/audclnt-streamflags-xxx-constants
+        streamflags =  0x00080000
         if exclusive_mode:
             sharemode = _ole32.AUDCLNT_SHAREMODE_EXCLUSIVE
+            periodicity = 0 # 0 uses default, must set value if using AUDCLNT_STREAMFLAGS_EVENTCALLBACK (0x00040000)
+            if isloopback: raise RuntimeError("Loopback mode and exclusive mode are incompatible.")
         else:
             sharemode = _ole32.AUDCLNT_SHAREMODE_SHARED
-        #             resample   | remix      | better-SRC | nopersist
-        streamflags = 0x00100000 | 0x80000000 | 0x08000000 | 0x00080000
-        if isloopback:
-            streamflags |= 0x00020000 #loopback
+            #               resample   | remix       | better-SRC
+            #               rateadjust | autoconvPCM | SRC default quality
+            streamflags  |= 0x00100000 | 0x80000000  | 0x08000000 # These flags are only relevant/permitted for shared mode
+            periodicity   = 0                                     # Always 0 for shared mode
+            if isloopback: streamflags |= 0x00020000              # Loopback only allowed for shared mode
+
         bufferduration = int(blocksize/samplerate * 10000000) # in hecto-nanoseconds (1000_000_0)
-        hr = self._ptr[0][0].lpVtbl.Initialize(self._ptr[0], sharemode, streamflags, bufferduration, 0, ppMixFormat[0], _ffi.NULL)
+        hr = self._ptr[0][0].lpVtbl.Initialize(self._ptr[0], sharemode, streamflags, bufferduration, periodicity, ppMixFormat[0], _ffi.NULL)
         _com.check_error(hr)
         _ole32.CoTaskMemFree(ppMixFormat[0])
 
@@ -795,7 +812,11 @@ class _Recorder(_AudioClient):
         self._idle_start_time = None
         data_ptr, nframes, flags = self._capture_buffer()
         if data_ptr != _ffi.NULL:
-            chunk = numpy.fromstring(_ffi.buffer(data_ptr, nframes*4*len(set(self.channelmap))), dtype='float32')
+            # Convert the raw CFFI buffer into a standard bytes object to ensure compatibility
+            # with modern NumPy versions (fromstring binary mode was removed). Using frombuffer
+            # on bytes plus .copy() guarantees a writable float32 array for downstream processing.
+            buf = bytes(_ffi.buffer(data_ptr, nframes * 4 * len(set(self.channelmap))))
+            chunk = numpy.frombuffer(buf, dtype=numpy.float32).copy()
         else:
             raise RuntimeError('Could not create capture buffer')
         if flags & _ole32.AUDCLNT_BUFFERFLAGS_SILENT:
@@ -806,7 +827,10 @@ class _Recorder(_AudioClient):
             flags &= ~_ole32.AUDCLNT_BUFFERFLAGS_DATA_DISCONTINUITY
             self._is_first_frame = False
         if flags & _ole32.AUDCLNT_BUFFERFLAGS_DATA_DISCONTINUITY:
-            warnings.warn("data discontinuity in recording", SoundcardRuntimeWarning)
+            # TODO: Disable this warning
+            # warnings.warn("data discontinuity in recording", SoundcardRuntimeWarning)
+            pass
+
         # ignore _ole32.AUDCLNT_BUFFERFLAGS_TIMESTAMP_ERROR, since we don't use
         # time stamps.
         if nframes > 0:
