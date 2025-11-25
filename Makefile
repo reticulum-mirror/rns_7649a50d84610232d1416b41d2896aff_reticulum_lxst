@@ -24,7 +24,7 @@ build_wheel:
 	python3 setup.py sdist bdist_wheel
 	rm ./skip_extensions
 	-@(rm ./LXST/*.so)
-	-@(rm ./LXST/*.pyd)
+	-@(rm ./LXST/*.dll)
 
 windll:
 	cl /LD LXST/Filters.c LXST/Filters.def /Fefilterlib.dll

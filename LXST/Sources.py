@@ -24,7 +24,7 @@ class LinuxBackend():
         self.bitdepth   = 32
         RNS.log(f"Using input device {self.device}", RNS.LOG_DEBUG)
 
-    def flush(self): self.recorder.flush()
+    def flush(self): self.device.flush()
 
     def get_recorder(self, samples_per_frame):
         return self.device.recorder(samplerate=self.SAMPLERATE, blocksize=samples_per_frame)
@@ -46,7 +46,7 @@ class AndroidBackend():
         self.bitdepth   = 32
         RNS.log(f"Using input device {self.device}", RNS.LOG_DEBUG)
 
-    def flush(self): self.recorder.flush()
+    def flush(self): self.device.flush()
 
     def get_recorder(self, samples_per_frame):
         return self.device.recorder(samplerate=self.SAMPLERATE, blocksize=samples_per_frame)
@@ -68,7 +68,7 @@ class DarwinBackend():
         self.bitdepth   = 32
         RNS.log(f"Using input device {self.device}", RNS.LOG_DEBUG)
 
-    def flush(self): self.recorder.flush()
+    def flush(self): self.device.flush()
 
     def get_recorder(self, samples_per_frame):
         return self.device.recorder(samplerate=self.SAMPLERATE, blocksize=samples_per_frame)
@@ -80,11 +80,8 @@ class WindowsBackend():
 
     def __init__(self, preferred_device=None, samplerate=SAMPLERATE):
         from .Platforms.windows import soundcard
-        from pythoncom import CoInitializeEx, CoUninitialize
-        self.com_init = CoInitializeEx
-        self.com_release = CoUninitialize
-        self.samplerate = samplerate
-        self.soundcard  = soundcard
+        self.samplerate   = samplerate
+        self.soundcard    = soundcard
         if preferred_device:
             try:    self.device = self.soundcard.get_microphone(preferred_device)
             except: self.device = self.soundcard.default_microphone()
@@ -93,13 +90,12 @@ class WindowsBackend():
         self.bitdepth   = 32
         RNS.log(f"Using input device {self.device}", RNS.LOG_DEBUG)
 
-    def flush(self): self.recorder.flush()
+    def flush(self): self.device.flush()
 
     def get_recorder(self, samples_per_frame):
-        self.com_init(0)
         return self.device.recorder(samplerate=self.SAMPLERATE, blocksize=samples_per_frame)
 
-    def release_recorder(self): self.com_release()
+    def release_recorder(self): pass
 
 def get_backend():
     if   RNS.vendor.platformutils.is_linux():   return LinuxBackend

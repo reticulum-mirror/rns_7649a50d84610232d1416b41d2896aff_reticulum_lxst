@@ -17,7 +17,7 @@ class LinuxBackend():
         else:       self.device = soundcard.default_speaker()
         RNS.log(f"Using output device {self.device}", RNS.LOG_DEBUG)
 
-    def flush(self): self.recorder.flush()
+    def flush(self): self.device.flush()
 
     def get_player(self, samples_per_frame=None, low_latency=None):
         return self.device.player(samplerate=self.samplerate, blocksize=samples_per_frame)
@@ -37,7 +37,7 @@ class AndroidBackend():
         else:       self.device = soundcard.default_speaker()
         RNS.log(f"Using output device {self.device}", RNS.LOG_DEBUG)
 
-    def flush(self): self.recorder.flush()
+    def flush(self): self.device.flush()
 
     def get_player(self, samples_per_frame=None, low_latency=None):
         return self.device.player(samplerate=self.samplerate, blocksize=samples_per_frame, low_latency=low_latency)
@@ -57,7 +57,7 @@ class DarwinBackend():
         else:       self.device = soundcard.default_speaker()
         RNS.log(f"Using output device {self.device}", RNS.LOG_DEBUG)
 
-    def flush(self): self.recorder.flush()
+    def flush(self): self.device.flush()
 
     def get_player(self, samples_per_frame=None, low_latency=None):
         return self.device.player(samplerate=self.samplerate, blocksize=samples_per_frame)
@@ -69,24 +69,20 @@ class WindowsBackend():
 
     def __init__(self, preferred_device=None, samplerate=SAMPLERATE):
         from .Platforms.windows import soundcard
-        from pythoncom import CoInitializeEx, CoUninitialize
-        self.com_init = CoInitializeEx
-        self.com_release = CoUninitialize
-        self.samplerate = samplerate
-        self.soundcard  = soundcard
+        self.samplerate   = samplerate
+        self.soundcard    = soundcard
         if preferred_device:
             try:    self.device = self.soundcard.get_speaker(preferred_device)
             except: self.device = soundcard.default_speaker()
         else:       self.device = soundcard.default_speaker()
         RNS.log(f"Using output device {self.device}", RNS.LOG_DEBUG)
 
-    def flush(self): self.recorder.flush()
+    def flush(self): self.device.flush()
 
     def get_player(self, samples_per_frame=None, low_latency=None):
-        self.com_init(0)
         return self.device.player(samplerate=self.samplerate, blocksize=samples_per_frame)
 
-    def release_player(self): self.com_release()
+    def release_player(self): pass
 
 def get_backend():
     if RNS.vendor.platformutils.is_linux():     return LinuxBackend
