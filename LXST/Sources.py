@@ -13,7 +13,7 @@ class LinuxBackend():
     SAMPLERATE = 48000
 
     def __init__(self, preferred_device=None, samplerate=SAMPLERATE):
-        import soundcard
+        from .Platforms.linux import soundcard
         self.samplerate = samplerate
         self.soundcard  = soundcard
         if preferred_device:
@@ -57,7 +57,7 @@ class DarwinBackend():
     SAMPLERATE = 48000
 
     def __init__(self, preferred_device=None, samplerate=SAMPLERATE):
-        import soundcard
+        from .Platforms.darwin import soundcard
         self.samplerate = samplerate
         self.soundcard  = soundcard
         if preferred_device:
@@ -79,7 +79,7 @@ class WindowsBackend():
     SAMPLERATE = 48000
 
     def __init__(self, preferred_device=None, samplerate=SAMPLERATE):
-        import soundcard
+        from .Platforms.windows import soundcard
         from pythoncom import CoInitializeEx, CoUninitialize
         self.com_init = CoInitializeEx
         self.com_release = CoUninitialize
