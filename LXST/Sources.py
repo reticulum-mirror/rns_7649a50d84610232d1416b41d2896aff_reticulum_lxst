@@ -24,6 +24,9 @@ class LinuxBackend():
         self.bitdepth   = 32
         RNS.log(f"Using input device {self.device}", RNS.LOG_DEBUG)
 
+    def all_microphones(self): return self.soundcard.all_microphones()
+    def default_microphone(self): return self.soundcard.default_microphone()
+
     def flush(self): self.device.flush()
 
     def get_recorder(self, samples_per_frame):
@@ -45,6 +48,9 @@ class AndroidBackend():
         self.channels   = self.device.channels
         self.bitdepth   = 32
         RNS.log(f"Using input device {self.device}", RNS.LOG_DEBUG)
+
+    def all_microphones(self): return self.soundcard.all_microphones()
+    def default_microphone(self): return self.soundcard.default_microphone()
 
     def flush(self): self.device.flush()
 
@@ -68,6 +74,9 @@ class DarwinBackend():
         self.bitdepth   = 32
         RNS.log(f"Using input device {self.device}", RNS.LOG_DEBUG)
 
+    def all_microphones(self): return self.soundcard.all_microphones()
+    def default_microphone(self): return self.soundcard.default_microphone()
+
     def flush(self): self.device.flush()
 
     def get_recorder(self, samples_per_frame):
@@ -89,6 +98,9 @@ class WindowsBackend():
         self.channels   = self.device.channels
         self.bitdepth   = 32
         RNS.log(f"Using input device {self.device}", RNS.LOG_DEBUG)
+
+    def all_microphones(self): return self.soundcard.all_microphones()
+    def default_microphone(self): return self.soundcard.default_microphone()
 
     def flush(self): self.device.flush()
 

@@ -17,6 +17,9 @@ class LinuxBackend():
         else:       self.device = soundcard.default_speaker()
         RNS.log(f"Using output device {self.device}", RNS.LOG_DEBUG)
 
+    def all_speakers(self): return self.soundcard.all_speakers()
+    def default_speaker(self): return self.soundcard.default_speaker()
+
     def flush(self): self.device.flush()
 
     def get_player(self, samples_per_frame=None, low_latency=None):
@@ -36,6 +39,9 @@ class AndroidBackend():
             except: self.device = soundcard.default_speaker()
         else:       self.device = soundcard.default_speaker()
         RNS.log(f"Using output device {self.device}", RNS.LOG_DEBUG)
+
+    def all_speakers(self): return self.soundcard.all_speakers()
+    def default_speaker(self): return self.soundcard.default_speaker()
 
     def flush(self): self.device.flush()
 
@@ -57,6 +63,9 @@ class DarwinBackend():
         else:       self.device = soundcard.default_speaker()
         RNS.log(f"Using output device {self.device}", RNS.LOG_DEBUG)
 
+    def all_speakers(self): return self.soundcard.all_speakers()
+    def default_speaker(self): return self.soundcard.default_speaker()
+    
     def flush(self): self.device.flush()
 
     def get_player(self, samples_per_frame=None, low_latency=None):
@@ -77,6 +86,9 @@ class WindowsBackend():
         else:       self.device = soundcard.default_speaker()
         RNS.log(f"Using output device {self.device}", RNS.LOG_DEBUG)
 
+    def all_speakers(self): return self.soundcard.all_speakers()
+    def default_speaker(self): return self.soundcard.default_speaker()
+    
     def flush(self): self.device.flush()
 
     def get_player(self, samples_per_frame=None, low_latency=None):

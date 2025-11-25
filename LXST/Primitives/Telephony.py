@@ -133,7 +133,7 @@ class Telephone(SignallingReceiver):
     def default_output(): return LXST.Sinks.Backend().default_speaker()
 
     @staticmethod
-    def default_input(): return LXST.Sinks.Backend().default_microphone()
+    def default_input(): return LXST.Sources.Backend().default_microphone()
 
     def __init__(self, identity, ring_time=RING_TIME, wait_time=WAIT_TIME, auto_answer=None, allowed=ALLOW_ALL, receive_gain=0.0, transmit_gain=0.0):
         super().__init__()
