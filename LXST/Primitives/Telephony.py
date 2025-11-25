@@ -431,7 +431,7 @@ class Telephone(SignallingReceiver):
         if self.receive_mixer: self.receive_mixer.mute(mute)
 
     def unmute_receive(self, unmute=True):
-        if self.receive_mixer: self.receive_mixer.unmute(mute)
+        if self.receive_mixer: self.receive_mixer.unmute(unmute)
 
     def mute_transmit(self, mute=True):
         if self.transmit_mixer: self.transmit_mixer.mute(mute)
