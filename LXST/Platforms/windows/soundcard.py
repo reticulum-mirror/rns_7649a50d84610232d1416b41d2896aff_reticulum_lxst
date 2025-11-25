@@ -51,13 +51,11 @@ import RNS
 
 _ffi = cffi.FFI()
 _package_dir, _ = os.path.split(__file__)
-with open(os.path.join(_package_dir, 'mediafoundation.h'), 'rt') as f:
-    _ffi.cdef(f.read())
-
-# Attempt to load by generic name first; fall back to the explicit DLL name if that fails.
-# On some Windows 11 systems with Python 3.11.x, omitting the ".dll" extension may not work.
+with open(os.path.join(_package_dir, 'mediafoundation.h'), 'rt') as f: _ffi.cdef(f.read())
 try: _ole32 = _ffi.dlopen('ole32')
-except OSError: _ole32 = _ffi.dlopen('ole32.dll')
+except OSError:
+    try: _ole32 = _ffi.dlopen('ole32.dll')
+    except: raise SystemError("LXST Could not load OLE32 DLL for WASAPI integration")
 
 def tid(): return threading.get_native_id()
 com_thread_ids = []
@@ -68,49 +66,35 @@ class _COMLibrary:
 
     def init_com(self):
         with self._lock:
-            if tid() in com_thread_ids:
-                # print(f"ATTEMPT TO REINIT COM FOR {tid()}")
-                return
+            if tid() in com_thread_ids: return
             else:
                 com_thread_ids.append(tid())
                 COINIT_MULTITHREADED = 0x0
-                print(f"COM INIT FROM SOUNDCARD {tid()}")
-                if platform.win32_ver()[0] == '8': raise OSError("Unsupported Windows version")
+                RNS.log(f"COM init from thread {tid()}", RNS.LOG_EXTREME)
+                if platform.win32_ver()[0] == "8": raise OSError("Unsupported Windows version")
                 else: hr = _ole32.CoInitializeEx(_ffi.NULL, COINIT_MULTITHREADED)
 
                 try:
                     self.check_error(hr)
                     self.com_loaded = True
-
                 except RuntimeError as e:
-                    print(f"GOT ERROR IN COM INIT: {e}")
-                    # Error 0x80010106
+                    # Error 0x80010106 - COM already initialized
                     RPC_E_CHANGED_MODE = 0x80010106
-                    if hr + 2 ** 32 == RPC_E_CHANGED_MODE:
-                        # COM was already initialized before (e.g. by the
-                        # debugger), therefore trying to initialize it again
-                        # fails we can safely ignore this error, but we have
-                        # to make sure that we don't try to unload it
-                        # afterwards therefore we set this flag to False:
-                        self.com_loaded = False
+                    if hr + 2 ** 32 == RPC_E_CHANGED_MODE: self.com_loaded = False
                     else: raise e
 
     def release_com(self):
         with self._lock:
             if tid() in com_thread_ids:
                 com_thread_ids.remove(tid())
-                print(f"COM DE-INIT FROM SOUNDCARD {tid()}")
+                RNS.log(f"COM release from thread {tid()}", RNS.LOG_EXTREME)
                 if _ole32 != None: _ole32.CoUninitialize()
-                else: print(f"OLE32 WAS NONE! {tid()}")
-            else: print(f"NO TID FOR COM DE-INIT FROM SOUNDCARD {tid()}")
+                else: RNS.log(f"OLE32 instance was None at de-init for thread {tid()}", RNS.LOG_DEBUG)
 
-    def __del__(self):
-        if self.com_loaded:
-            self.release_com()
+    def __del__(self): self.release_com()
 
     @staticmethod
     def check_error(hresult):
-        # see shared/winerror.h:
         S_OK = 0
         E_NOINTERFACE = 0x80004002
         E_POINTER = 0x80004003
@@ -136,25 +120,17 @@ class _COMLibrary:
 _com = _COMLibrary()
 
 def all_speakers():
-    print(f"ALL SPEAKERS {tid()}")
-    # if not tid() in com_thread_ids: _com.init_com()
     with _DeviceEnumerator() as enum:
         return [_Speaker(dev) for dev in enum.all_devices('speaker')]
 
 def default_speaker():
-    print(f"DEFAULT SPEAKER {tid()}")
-    # if not tid() in com_thread_ids: _com.init_com()
     with _DeviceEnumerator() as enum:
         return _Speaker(enum.default_device('speaker'))
 
 def get_speaker(id):
-    print(f"GET SPEAKER {tid()}")
-    # if not tid() in com_thread_ids: _com.init_com()
     return _match_device(id, all_speakers())
 
 def all_microphones(include_loopback=False):
-    print(f"ALL MICROPHONES {tid()}")
-    # if not tid() in com_thread_ids: _com.init_com()
     with _DeviceEnumerator() as enum:
         if include_loopback:
             return [_Microphone(dev, isloopback=True) for dev in enum.all_devices('speaker')] + [_Microphone(dev) for dev in enum.all_devices('microphone')]
@@ -162,77 +138,58 @@ def all_microphones(include_loopback=False):
             return [_Microphone(dev) for dev in enum.all_devices('microphone')]
 
 def default_microphone():
-    print(f"DEFAULT MICROPHONE {tid()}")
-    # if not tid() in com_thread_ids: _com.init_com()
     with _DeviceEnumerator() as enum:
         return _Microphone(enum.default_device('microphone'))
 
 def get_microphone(id, include_loopback=False):
-    print(f"GET MICROPHONE {tid()}")
-    # if not tid() in com_thread_ids: _com.init_com()
     return _match_device(id, all_microphones(include_loopback))
 
 def _match_device(id, devices):
     devices_by_id = {device.id: device for device in devices}
     devices_by_name = {device.name: device for device in devices}
-    if id in devices_by_id:
-        return devices_by_id[id]
-    # try substring match:
+    if id in devices_by_id: return devices_by_id[id]
+    
+    # Try substring match:
     for name, device in devices_by_name.items():
-        if id in name:
-            return device
-    # try fuzzy match:
+        if id in name: return device
+    
+    # Try fuzzy match:
     pattern = '.*'.join(id)
     for name, device in devices_by_name.items():
-        if re.match(pattern, name):
-            return device
-    raise IndexError('no device with id {}'.format(id))
+        if re.match(pattern, name): return device
+    
+    raise IndexError('No device with id {}'.format(id))
 
 def _str2wstr(string):
-    """Converts a Python str to a Windows WSTR_T."""
     return _ffi.new('int16_t[]', [ord(s) for s in string]+[0])
 
 def _guidof(uuid_str):
-    """Creates a Windows LPIID from a str."""
     IID = _ffi.new('LPIID')
-    # convert to zero terminated wide string
     uuid = _str2wstr(uuid_str)
     hr = _ole32.IIDFromString(_ffi.cast("char*", uuid), IID)
     _com.check_error(hr)
     return IID
 
-
 def get_name(): raise NotImplementedError()
 def set_name(name): raise NotImplementedError()
 
 class _DeviceEnumerator:
-    """Wrapper class for an IMMDeviceEnumerator**.
-
-    Provides methods for retrieving _Devices and pointers to the
-    underlying IMMDevices.
-
-    """
-
+    # See shared/WTypesbase.h and um/combaseapi.h:
     def __init__(self):
         _com.init_com()
         self._ptr = _ffi.new('IMMDeviceEnumerator **')
         IID_MMDeviceEnumerator = _guidof("{BCDE0395-E52F-467C-8E3D-C4579291692E}")
         IID_IMMDeviceEnumerator = _guidof("{A95664D2-9614-4F35-A746-DE8DB63617E6}")
-        # see shared/WTypesbase.h and um/combaseapi.h:
         CLSCTX_ALL = 23
-        hr = _ole32.CoCreateInstance(IID_MMDeviceEnumerator, _ffi.NULL, CLSCTX_ALL,
-                                  IID_IMMDeviceEnumerator, _ffi.cast("void **", self._ptr))
+        hr = _ole32.CoCreateInstance(IID_MMDeviceEnumerator, _ffi.NULL, CLSCTX_ALL, IID_IMMDeviceEnumerator, _ffi.cast("void **", self._ptr))
         _com.check_error(hr)
 
     def __enter__(self):
         _com.init_com()
         return self
 
-    def __exit__(self, exc_type, exc_value, traceback):
-        _com.release(self._ptr)
-
-    def __del__(self):
-        _com.release(self._ptr)
+    def __exit__(self, exc_type, exc_value, traceback): _com.release(self._ptr)
+    def __del__(self): _com.release(self._ptr)
 
     def _device_id(self, device_ptr):
         ppId = _ffi.new('LPWSTR *')
@@ -269,7 +226,6 @@ class _DeviceEnumerator:
         return device
 
     def device_ptr(self, devid):
-        """Retrieve IMMDevice** for a WASAPI device ID."""
         ppDevice = _ffi.new('IMMDevice **')
         devid = _str2wstr(devid)
         hr = self._ptr[0][0].lpVtbl.GetDevice(self._ptr[0], _ffi.cast('wchar_t *', devid), ppDevice);
@@ -277,17 +233,11 @@ class _DeviceEnumerator:
         return ppDevice
 
 class _DeviceCollection:
-    """Wrapper class for an IMMDeviceCollection**.
-
-    Generator for IMMDevice** pointers.
-
-    """
     def __init__(self, ptr):
         _com.init_com()
         self._ptr = ptr
 
-    def __del__(self):
-        _com.release(self._ptr)
+    def __del__(self): _com.release(self._ptr)
 
     def __len__(self):
         pCount = _ffi.new('UINT *')
@@ -304,15 +254,6 @@ class _DeviceCollection:
         return ppDevice
 
 class _PropVariant:
-    """Wrapper class for a PROPVARIANT.
-
-    Correctly allocates and frees a PROPVARIANT. Normal CFFI
-    malloc/free is incompatible with PROPVARIANTs, since COM expects
-    PROPVARIANTS to be freely reallocatable by its own allocator.
-
-    Access the PROPVARIANT* pointer using .ptr.
-
-    """
     def __init__(self):
         _com.init_com()
         self.ptr = _ole32.CoTaskMemAlloc(_ffi.sizeof('PROPVARIANT'))
@@ -323,15 +264,6 @@ class _PropVariant:
         _com.check_error(hr)
 
 class _Device:
-    """Wrapper class for an IMMDevice.
-
-    Implements memory management and retrieval of the device name, the
-    number of channels, and device activation.
-
-    Subclassed by _Speaker and _Microphone for playback and recording.
-
-    """
-
     def __init__(self, id):
         _com.init_com()
         self._id = id
@@ -341,8 +273,7 @@ class _Device:
             return enum.device_ptr(self._id)
 
     @property
-    def id(self):
-        return self._id
+    def id(self): return self._id
 
     @property
     def name(self):
@@ -363,8 +294,7 @@ class _Device:
             raise RuntimeError('Property was expected to be a string, but is not a string')
         data = _ffi.cast("short*", propvariant.ptr[0].data)
         for idx in range(256):
-            if data[idx] == 0:
-                break
+            if data[idx] == 0: break
         devicename = struct.pack('h' * idx, *data[0:idx]).decode('utf-16')
         _com.release(ppPropertyStore)
         return devicename
@@ -404,94 +334,46 @@ class _Device:
         return ppAudioClient
 
 class _Speaker(_Device):
-    """A soundcard output. Can be used to play audio.
+    def __init__(self, device): self._id = device._id
 
-    Use the `play` method to play one piece of audio, or use the
-    `player` method to get a context manager for playing continuous
-    audio.
-
-    Properties:
-    - `channels`: the number of available channels.
-    - `name`: the name of the sound card.
-    - `id`: the WASAPI ID of the sound card.
-
-    """
-
-    def __init__(self, device):
-        self._id = device._id
-
-    def __repr__(self):
-        return '<Speaker {} ({} channels)>'.format(self.name,self.channels)
+    def __repr__(self): return '<Speaker {} ({} channels)>'.format(self.name,self.channels)
 
     def player(self, samplerate, channels=None, blocksize=None, exclusive_mode=False):
-        if channels is None:
-            channels = self.channels
+        if channels is None: channels = self.channels
         return _Player(self._audio_client(), samplerate, channels, blocksize, False, exclusive_mode)
 
     def play(self, data, samplerate, channels=None, blocksize=None):
-        with self.player(samplerate, channels, blocksize) as p:
-            p.play(data)
+        with self.player(samplerate, channels, blocksize) as p: p.play(data)
 
 
 class _Microphone(_Device):
-    """A soundcard input. Can be used to record audio.
-
-    Use the `record` method to record one piece of audio, or use the
-    `recorder` method to get a context manager for recording
-    continuous audio.
-
-    Properties:
-    - `channels`: the number of available channels.
-    - `name`: the name of the sound card.
-    - `id`: the WASAPI ID of the sound card.
-
-    """
-
     def __init__(self, device, isloopback=False):
         self._id = device._id
         self.isloopback = isloopback
 
     def __repr__(self):
-        if self.isloopback:
-            return '<Loopback {} ({} channels)>'.format(self.name,self.channels)
-        else:
-            return '<Microphone {} ({} channels)>'.format(self.name,self.channels)
+        if self.isloopback: return '<Loopback {} ({} channels)>'.format(self.name,self.channels)
+        else: return '<Microphone {} ({} channels)>'.format(self.name,self.channels)
 
     def recorder(self, samplerate, channels=None, blocksize=None, exclusive_mode=False):
-        if channels is None:
-            channels = self.channels
+        if channels is None: channels = self.channels
         return _Recorder(self._audio_client(), samplerate, channels, blocksize, self.isloopback, exclusive_mode)
 
     def record(self, numframes, samplerate, channels=None, blocksize=None):
-        with self.recorder(samplerate, channels, blocksize) as r:
-            return r.record(numframes)
+        with self.recorder(samplerate, channels, blocksize) as r: return r.record(numframes)
 
 class _AudioClient:
-    """Wrapper class for an IAudioClient** object.
-
-    Implements memory management and various property retrieval for
-    IAudioClient objects.
-
-    Subclassed by _Player and _Recorder for playback and recording.
-
-    """
-
     def __init__(self, ptr, samplerate, channels, blocksize, isloopback, exclusive_mode=False):
         self._ptr = ptr
 
-        if isinstance(channels, int):
-            self.channelmap = list(range(channels))
-        elif isinstance(channels, collections.abc.Iterable):
-            self.channelmap = channels
-        else:
-            raise TypeError('channels must be iterable or integer')
+        if isinstance(channels, int): self.channelmap = list(range(channels))
+        elif isinstance(channels, collections.abc.Iterable): self.channelmap = channels
+        else: raise TypeError('Channels must be iterable or integer')
 
         if list(range(len(set(self.channelmap)))) != sorted(list(set(self.channelmap))):
-            raise TypeError('Due to limitations of WASAPI, channel maps on Windows '
-                            'must be a combination of `range(0, x)`.')
+            raise TypeError('Due to limitations of WASAPI, channel maps on Windows must be a combination of `range(0, x)`.')
 
-        if blocksize is None:
-            blocksize = self.deviceperiod[0]*samplerate
+        if blocksize is None: blocksize = self.deviceperiod[0]*samplerate
 
         ppMixFormat = _ffi.new('WAVEFORMATEXTENSIBLE**') # See: https://docs.microsoft.com/en-us/windows/win32/api/mmreg/ns-mmreg-waveformatextensible
         hr = self._ptr[0][0].lpVtbl.GetMixFormat(self._ptr[0], ppMixFormat)
@@ -517,8 +399,7 @@ class _AudioClient:
 
         channels = len(set(self.channelmap))
         channelmask = 0
-        for ch in self.channelmap:
-            channelmask |= 1<<ch
+        for ch in self.channelmap: channelmask |= 1<<ch
         ppMixFormat[0][0].Format.nChannels=channels
         ppMixFormat[0][0].Format.nSamplesPerSec=int(samplerate)
         ppMixFormat[0][0].Format.nAvgBytesPerSec=int(samplerate) * channels * 4
@@ -577,18 +458,6 @@ class _AudioClient:
         return pPadding[0]
 
 class _Player(_AudioClient):
-    """A context manager for an active output stream.
-
-    Audio playback is available as soon as the context manager is
-    entered. Audio data can be played using the `play` method.
-    Successive calls to `play` will queue up the audio one piece after
-    another. If no audio is queued up, this will play silence.
-
-    This context manager can only be entered once, and can not be used
-    after it is closed.
-
-    """
-
     # https://msdn.microsoft.com/en-us/library/windows/desktop/dd316756(v=vs.85).aspx
     def _render_client(self):
         iid = _guidof("{F294ACFC-3146-4483-A7BF-ADDCA7C260E2}")
@@ -625,34 +494,12 @@ class _Player(_AudioClient):
         _com.release_com()
 
     def play(self, data):
-        """Play some audio data.
-
-        Internally, all data is handled as float32 and with the
-        appropriate number of channels. For maximum performance,
-        provide data as a `frames x channels` float32 numpy array.
-
-        If single-channel or one-dimensional data is given, this data
-        will be played on all available channels.
-
-        This function will return *before* all data has been played,
-        so that additional data can be provided for gapless playback.
-        The amount of buffering can be controlled through the
-        blocksize of the player object.
-
-        If data is provided faster than it is played, later pieces
-        will be queued up and played one after another.
-
-        """
-
         data = numpy.array(data, dtype='float32', order='C')
-        if data.ndim == 1:
-            data = data[:, None] # force 2d
-        if data.ndim != 2:
-            raise TypeError('data must be 1d or 2d, not {}d'.format(data.ndim))
-        if data.shape[1] == 1 and len(set(self.channelmap)) != 1:
-            data = numpy.tile(data, [1, len(set(self.channelmap))])
+        if data.ndim == 1: data = data[:, None] # force 2d
+        if data.ndim != 2: raise TypeError('Data must be 1d or 2d, not {}d'.format(data.ndim))
+        if data.shape[1] == 1 and len(set(self.channelmap)) != 1: data = numpy.tile(data, [1, len(set(self.channelmap))])
 
-        # internally, channel numbers are always ascending:
+        # Internally, channel numbers are always ascending:
         sortidx = sorted(range(len(self.channelmap)), key=lambda k: self.channelmap[k])
         data = data[:, sortidx]
 
@@ -664,6 +511,7 @@ class _Player(_AudioClient):
             if towrite == 0:
                 time.sleep(0.001)
                 continue
+            
             bytes = data[:towrite].ravel().tobytes()
             buffer = self._render_buffer(towrite)
             _ffi.memmove(buffer[0], bytes, len(bytes))
@@ -714,26 +562,18 @@ class _Recorder(_AudioClient):
         _com.release_com()
 
     def _record_chunk(self):
-        """Record one chunk of audio data, as returned by WASAPI
-
-        The data will be returned as a 1D numpy array, which will be used by
-        the `record` method. This function is the interface of the `_Recorder`
-        object with WASAPI.
-
-        """
-
         while self._capture_available_frames() == 0:
-            # some sound cards indicate silence by not making any
+            # Some sound cards indicate silence by not making any
             # frames available. If that is the case, we need to
             # estimate the number of zeros to return, by measuring the
             # silent time:
-            if self._idle_start_time is None:
-                self._idle_start_time = time.perf_counter_ns()
+            if self._idle_start_time is None: self._idle_start_time = time.perf_counter_ns()
 
             default_block_length, minimum_block_length = self.deviceperiod
             time.sleep(minimum_block_length/4)
             elapsed_time_ns = time.perf_counter_ns() - self._idle_start_time
-            # waiting times shorter than a block length or so are
+            
+            # Waiting times shorter than a block length or so are
             # normal, and not indicative of a silent sound card. If
             # the waiting times get longer however, we must assume
             # that there is no audio data forthcoming, and return
@@ -752,22 +592,17 @@ class _Recorder(_AudioClient):
             # on bytes plus .copy() guarantees a writable float32 array for downstream processing.
             buf = bytes(_ffi.buffer(data_ptr, nframes * 4 * len(set(self.channelmap))))
             chunk = numpy.frombuffer(buf, dtype=numpy.float32).copy()
-        else:
-            raise RuntimeError('Could not create capture buffer')
-        if flags & _ole32.AUDCLNT_BUFFERFLAGS_SILENT:
-            # see https://learn.microsoft.com/en-us/windows/win32/api/audioclient/ne-audioclient-_audclnt_bufferflags
-            chunk[:] = 0
+        else: raise RuntimeError('Could not create capture buffer')
+
+        # See https://learn.microsoft.com/en-us/windows/win32/api/audioclient/ne-audioclient-_audclnt_bufferflags
+        if flags & _ole32.AUDCLNT_BUFFERFLAGS_SILENT: chunk[:] = 0
         if self._is_first_frame:
-            # on first run, clear data discontinuity error, as it will always be set:
+            # On first run, clear data discontinuity error, as it will always be set:
             flags &= ~_ole32.AUDCLNT_BUFFERFLAGS_DATA_DISCONTINUITY
             self._is_first_frame = False
-        if flags & _ole32.AUDCLNT_BUFFERFLAGS_DATA_DISCONTINUITY:
-            # TODO: Disable this warning
-            # warnings.warn("data discontinuity in recording", SoundcardRuntimeWarning)
-            pass
+        if flags & _ole32.AUDCLNT_BUFFERFLAGS_DATA_DISCONTINUITY: pass
 
-        # ignore _ole32.AUDCLNT_BUFFERFLAGS_TIMESTAMP_ERROR, since we don't use
-        # time stamps.
+        # Ignore _ole32.AUDCLNT_BUFFERFLAGS_TIMESTAMP_ERROR, since we don't use time stamps.
         if nframes > 0:
             self._capture_release(nframes)
             return chunk
@@ -775,41 +610,24 @@ class _Recorder(_AudioClient):
             return numpy.zeros([0], dtype='float32')
 
     def record(self, numframes=None):
-        """Record a block of audio data.
-
-        The data will be returned as a frames × channels float32 numpy array.
-        This function will wait until numframes frames have been recorded.
-        If numframes is given, it will return exactly `numframes` frames,
-        and buffer the rest for later.
-
-        If numframes is None, it will return whatever the audio backend
-        has available right now.
-        Use this if latency must be kept to a minimum, but be aware that
-        block sizes can change at the whims of the audio backend.
-
-        If using `record` with `numframes=None` after using `record` with a
-        required `numframes`, the last buffered frame will be returned along
-        with the new recorded block.
-        (If you want to empty the last buffered frame instead, use `flush`)
-
-        """
-
         if numframes is None:
             recorded_data = [self._pending_chunk, self._record_chunk()]
             self._pending_chunk = numpy.zeros([0], dtype='float32')
+        
         else:
             recorded_frames = len(self._pending_chunk)
             recorded_data = [self._pending_chunk]
             self._pending_chunk = numpy.zeros([0], dtype='float32')
             required_frames = numframes*len(set(self.channelmap))
+
             while recorded_frames < required_frames:
                 chunk = self._record_chunk()
                 if len(chunk) == 0:
-                    # no data forthcoming: return zeros
-                    chunk = numpy.zeros(required_frames-recorded_frames,
-                                        dtype='float32')
+                    # No data forthcoming: return zeros
+                    chunk = numpy.zeros(required_frames-recorded_frames, dtype='float32')
                 recorded_data.append(chunk)
                 recorded_frames += len(chunk)
+
             if recorded_frames > required_frames:
                 to_split = -int(recorded_frames-required_frames)
                 recorded_data[-1], self._pending_chunk = numpy.split(recorded_data[-1], [to_split])
@@ -818,11 +636,6 @@ class _Recorder(_AudioClient):
         return data[:, self.channelmap]
 
     def flush(self):
-        """Return the last pending chunk
-        After using the record method, this will return the last incomplete
-        chunk and delete it.
-
-        """
         last_chunk = numpy.reshape(self._pending_chunk, [-1, len(set(self.channelmap))])
         self._pending_chunk = numpy.zeros([0], dtype='float32')
         return last_chunk
