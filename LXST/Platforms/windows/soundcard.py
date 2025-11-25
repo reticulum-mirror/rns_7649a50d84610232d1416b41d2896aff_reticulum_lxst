@@ -53,12 +53,10 @@ _package_dir, _ = os.path.split(__file__)
 with open(os.path.join(_package_dir, 'mediafoundation.h'), 'rt') as f:
     _ffi.cdef(f.read())
 
-try:
-    # Attempt to load by generic name first; fall back to the explicit DLL name if that fails.
-    _ole32 = _ffi.dlopen('ole32')
-except OSError:
-    # On some Windows 11 systems with Python 3.11.x, omitting the ".dll" extension may not work.
-    _ole32 = _ffi.dlopen('ole32.dll')
+# Attempt to load by generic name first; fall back to the explicit DLL name if that fails.
+# On some Windows 11 systems with Python 3.11.x, omitting the ".dll" extension may not work.
+try: _ole32 = _ffi.dlopen('ole32')
+except OSError: _ole32 = _ffi.dlopen('ole32.dll')
 
 
 # use a custom warning subclass that is always shown, instead of once:
@@ -113,6 +111,7 @@ class _COMLibrary:
     def __del__(self):
         # Don't un-initialize COM if COM was not initialized directly
         # by this class:
+        # TODO: Fix none reference here
         if self.com_loaded:
             _ole32.CoUninitialize()
 
