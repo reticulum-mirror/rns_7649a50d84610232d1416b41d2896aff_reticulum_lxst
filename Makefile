@@ -26,13 +26,19 @@ build_wheel:
 	-@(rm ./LXST/*.so)
 	-@(rm ./LXST/*.pyd)
 
+windll:
+	cl /LD LXST/Filters.c LXST/Filters.def /Fefilterlib.dll
+	mv ./filterlib.dll ./lib/dev/
+	rm ./filterlib.exp
+	rm ./filterlib.lib
+	rm ./filterlib.obj
+
 native_libs:
 	./march_build.sh
 
 persist_libs:
 	-cp ./lib/dev/*.so ./lib/static/
 	-cp ./lib/dev/*.dll ./lib/static/
-	-cp ./lib/dev/*.dylib ./lib/static/
 
 release: remove_symlinks build_wheel create_symlinks
 
