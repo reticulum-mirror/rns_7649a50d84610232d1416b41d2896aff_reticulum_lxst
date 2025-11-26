@@ -214,5 +214,3 @@ class LineSink(LocalSink):
                             RNS.log(f"Could not run-time enable low latency mode on {self}, the operation is not supported by the backend", RNS.LOG_DEBUG)
 
             self.backend.release_player()
-
-class PacketSink(RemoteSink): pass
