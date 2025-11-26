@@ -240,7 +240,7 @@ class LineSource(LocalSource):
 
 class OpusFileSource(LocalSource):
     MAX_FRAMES       = 128
-    DEFAULT_FRAME_MS = 70
+    DEFAULT_FRAME_MS = 100
     TYPE_MAP_FACTOR  = np.iinfo("int16").max
 
     def __init__(self, file_path, target_frame_ms=DEFAULT_FRAME_MS, loop=False, codec=None, sink=None, timed=False):
