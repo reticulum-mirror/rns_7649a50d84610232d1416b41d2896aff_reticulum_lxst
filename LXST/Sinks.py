@@ -5,6 +5,7 @@ import threading
 import numpy as np
 from collections import deque
 from LXST.Codecs import Opus
+from LXST.Codecs.Codec import resample_bytes, resample
 
 class LinuxBackend():
     SAMPLERATE = 48000
@@ -222,7 +223,7 @@ class OpusFileSink(LocalSink):
     FINALIZE_TIMEOUT = 2
     TYPE_MAP_FACTOR  = np.iinfo("int16").max
 
-    def __init__(self, path=None, autodigest=True):
+    def __init__(self, path=None, autodigest=True, profile=Opus.PROFILE_AUDIO_MAX):
         self.should_run           = False
         self.digest_thread        = None
         self.digest_lock          = threading.Lock()
@@ -231,17 +232,28 @@ class OpusFileSink(LocalSink):
         self.autodigest           = autodigest
         self.autostart_min        = self.AUTOSTART_MIN
         self.buffer_max_height    = self.MAX_FRAMES
+        self.profile              = profile
+        self.bitdepth             = 32
         self.samplerate           = None
-        self.channels             = None
+        self.output_samplerate    = Opus.profile_samplerate(self.profile)
+        self.channels             = Opus.profile_channels(self.profile)
+        self.application          = Opus.profile_application(self.profile)
+        self.bitrate_ceiling      = Opus.profile_bitrate_ceiling(self.profile)
+        self.max_bytes_per_frame  = None
         self.samples_per_frame    = None
         self.frame_time           = None
         self.output_latency       = 0
         self.max_latency          = 0
         self.underrun_at          = None
+        self.samples_written      = 0
         self.__recording_stopped  = False
+        self.__finalized          = False
         self.__opus_writer        = None
         self.__encoder            = None
         self.__output_path        = path
+
+    @property
+    def frames_waiting(self): return len(self.frame_deque)
 
     def can_receive(self, from_source=None):
         with self.insert_lock:
@@ -269,35 +281,43 @@ class OpusFileSink(LocalSink):
             self.digest_thread.start()
 
     def stop(self):
-        self.__recording_stopped = True
-        timeout = time.time()+self.FINALIZE_TIMEOUT
-        while len(self.frame_deque) > 0 and time.time() < timeout: time.sleep(0.05)
-        self.should_run = False
-        if self.__opus_writer:
+        if self.should_run:
+            self.__recording_stopped = True
+            timeout = time.time()+self.FINALIZE_TIMEOUT
+            while len(self.frame_deque) > 0 and time.time() < timeout: time.sleep(0.05)
+            self.should_run = False
+            while self.__finalized == False: time.sleep(0.05)    
             self.__opus_writer.close()
             self.__opus_writer = None
 
     def __digest_job(self):
         with self.digest_lock:
-            from .Codecs.libs.pyogg.opus_buffered_encoder import OpusBufferedEncoder
-            from .Codecs.libs.pyogg.ogg_opus_writer import OggOpusWriter
+            from .Codecs.libs.pyogg import OpusBufferedEncoder
+            from .Codecs.libs.pyogg import OggOpusWriter
             
             if not self.__output_path: raise ValueError("No recording file path configured")
+            self.max_bytes_per_frame = Opus.max_bytes_per_frame(self.bitrate_ceiling, self.frame_time*1000)
             self.__encoder = OpusBufferedEncoder()
-            self.__encoder.set_application("audio")
+            self.__encoder.set_application(self.application)
             self.__encoder.set_sampling_frequency(self.samplerate)
             self.__encoder.set_channels(self.channels)
             self.__encoder.set_frame_size(int(self.frame_time*1000))
+            self.__encoder.set_max_bytes_per_frame(self.max_bytes_per_frame)
             self.__opus_writer = OggOpusWriter(self.__output_path, self.__encoder)
-            
-            while self.should_run and self.__opus_writer:
-                frames_ready = len(self.frame_deque)
+
+            final_silence_frames = 10
+            while self.should_run or final_silence_frames > 0:
+                frames_ready = len(self.frame_deque) or (self.should_run == False and final_silence_frames)
                 if frames_ready:
                     self.output_latency = len(self.frame_deque)*self.frame_time
                     self.max_latency    = self.buffer_max_height*self.frame_time
                     self.underrun_at    = None
                     
-                    with self.insert_lock: frame = self.frame_deque.popleft()
+                    if self.should_run:
+                        with self.insert_lock: frame = self.frame_deque.popleft()
+                    else:
+                        final_silence_frames -= 1
+                        frame = np.zeros((self.samples_per_frame, self.channels), dtype="float32")
 
                     if   frame.shape[1] > self.channels: frame = frame[:, 0:self.channels]
                     elif frame.shape[1] < self.channels:
@@ -309,11 +329,19 @@ class OpusFileSink(LocalSink):
                         silence_frame = np.zeros((self.samples_per_frame-frame.shape[0], frame.shape[1]), dtype=frame.dtype)
                         frame = np.vstack([frame, silence_frame])
 
-                    self.__opus_writer.write(memoryview(bytearray((frame*self.TYPE_MAP_FACTOR).astype(np.int16).tobytes())))
+                    self.samples_written += frame.shape[0]
+
+                    if self.samplerate != 48000:
+                        frame = resample(frame, self.bitdepth, self.channels, self.samplerate, self.output_samplerate)
+
+                    input_samples = frame*self.TYPE_MAP_FACTOR
+                    input_samples = input_samples.astype(np.int16)
+
+                    self.__opus_writer.write(bytearray(input_samples.tobytes()))
                     
-                    if len(self.frame_deque) > self.buffer_max_height:
-                        RNS.log(f"Buffer lag on {self} (height {len(self.frame_deque)}), dropping one frame", RNS.LOG_DEBUG)
-                        self.frame_deque.popleft()
+                    if len(self.frame_deque) > self.buffer_max_height: RNS.log(f"Buffer lag on {self} (height {len(self.frame_deque)})", RNS.LOG_DEBUG)
                 else:
                     if self.underrun_at == None: self.underrun_at = time.time()
                     else: time.sleep(self.frame_time*0.1)
+
+            self.__finalized = True

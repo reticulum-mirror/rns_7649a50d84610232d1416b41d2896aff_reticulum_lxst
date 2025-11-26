@@ -11,11 +11,8 @@ class FileRecorder():
         self._record_device = device
         self.__profile = profile
         self.__source = None
-        self.__sink = OpusFileSink(path=self._file_path)
-        self.__raw = LXST.Codecs.Raw()
-        self.__loopback = LXST.Sources.Loopback()
-        self.__output_pipeline = LXST.Pipeline(source=self.__loopback, codec=self.__raw, sink=self.__sink)
-        self.__input_pipeline = None
+        self.__sink = OpusFileSink(path=self._file_path, profile=profile)
+        self.__null = LXST.Codecs.Null()
         self.set_source(device)
 
     @property
@@ -28,8 +25,8 @@ class FileRecorder():
 
     def set_source(self, device=None):
         self._record_device = device
-        self.__source = LineSource(preferred_device=self._record_device, target_frame_ms=20, codec=self.__raw, sink=self.__loopback)
-        self.__input_pipeline = LXST.Pipeline(source=self.__source, codec=self.__raw, sink=self.__loopback)
+        self.__source = LineSource(preferred_device=self._record_device, target_frame_ms=60, codec=self.__null, sink=self.__sink)
+        self.__sink.source = self.__source
 
     def set_output_path(self, path):
         self._file_path = path
@@ -37,13 +34,12 @@ class FileRecorder():
 
     def start(self):
         if self.__source:
-            self.__input_pipeline.start()
-            self.__output_pipeline.start()
+            self.__source.start()
 
     def stop(self):
         if self.__source:
-            self.__input_pipeline.stop()
-            self.__output_pipeline.stop()
+            self.__source.stop()
+            while self.__sink.frames_waiting: time.sleep(0.1)
             self.__sink.stop()
 
     def record(self): 
