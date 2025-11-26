@@ -332,5 +332,3 @@ class OpusFileSource(LocalSource):
                                 self.sink.handle_frame(frame, self)
                 else:
                     time.sleep(self.frame_time*0.1)
-
-class PacketSource(RemoteSource): pass
