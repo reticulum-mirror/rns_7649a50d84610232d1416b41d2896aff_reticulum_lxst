@@ -2,7 +2,9 @@ import RNS
 import math
 import time
 import threading
+import numpy as np
 from collections import deque
+from LXST.Codecs import Opus
 
 class LinuxBackend():
     SAMPLERATE = 48000
@@ -119,7 +121,6 @@ class LineSink(LocalSink):
 
     def __init__(self, preferred_device=None, autodigest=True, low_latency=False):
         self.preferred_device     = preferred_device
-        self.frame_deque          = deque(maxlen=self.MAX_FRAMES)
         self.should_run           = False
         self.digest_thread        = None
         self.digest_lock          = threading.Lock()
@@ -214,3 +215,105 @@ class LineSink(LocalSink):
                             RNS.log(f"Could not run-time enable low latency mode on {self}, the operation is not supported by the backend", RNS.LOG_DEBUG)
 
             self.backend.release_player()
+
+class OpusFileSink(LocalSink):
+    MAX_FRAMES       = 64
+    AUTOSTART_MIN    = 1
+    FINALIZE_TIMEOUT = 2
+    TYPE_MAP_FACTOR  = np.iinfo("int16").max
+
+    def __init__(self, path=None, autodigest=True):
+        self.should_run           = False
+        self.digest_thread        = None
+        self.digest_lock          = threading.Lock()
+        self.insert_lock          = threading.Lock()
+        self.frame_deque          = deque(maxlen=self.MAX_FRAMES)
+        self.autodigest           = autodigest
+        self.autostart_min        = self.AUTOSTART_MIN
+        self.buffer_max_height    = self.MAX_FRAMES
+        self.samplerate           = None
+        self.channels             = None
+        self.samples_per_frame    = None
+        self.frame_time           = None
+        self.output_latency       = 0
+        self.max_latency          = 0
+        self.underrun_at          = None
+        self.__recording_stopped  = False
+        self.__opus_writer        = None
+        self.__encoder            = None
+        self.__output_path        = path
+
+    def can_receive(self, from_source=None):
+        with self.insert_lock:
+            if self.__recording_stopped: return False
+            if len(self.frame_deque) < self.buffer_max_height: return True
+            else:                                              return False
+
+    def handle_frame(self, frame, source=None):
+        with self.insert_lock:
+            self.frame_deque.append(frame)
+            if self.samples_per_frame == None:
+                self.samplerate = source.samplerate
+                self.samples_per_frame = frame.shape[0]
+                self.frame_time = self.samples_per_frame*(1/self.samplerate)
+                if not self.channels: self.channels = frame.shape[1]
+                RNS.log(f"{self} starting at {self.samples_per_frame} samples per frame, {self.channels} channels", RNS.LOG_DEBUG)
+
+            if self.autodigest and not self.should_run:
+                if len(self.frame_deque) >= self.autostart_min: self.start()
+
+    def start(self):
+        if not self.should_run:
+            self.should_run = True
+            self.digest_thread = threading.Thread(target=self.__digest_job, daemon=True)
+            self.digest_thread.start()
+
+    def stop(self):
+        self.__recording_stopped = True
+        timeout = time.time()+self.FINALIZE_TIMEOUT
+        while len(self.frame_deque) > 0 and time.time() < timeout: time.sleep(0.05)
+        self.should_run = False
+        if self.__opus_writer:
+            self.__opus_writer.close()
+            self.__opus_writer = None
+
+    def __digest_job(self):
+        with self.digest_lock:
+            from .Codecs.libs.pyogg.opus_buffered_encoder import OpusBufferedEncoder
+            from .Codecs.libs.pyogg.ogg_opus_writer import OggOpusWriter
+            
+            if not self.__output_path: raise ValueError("No recording file path configured")
+            self.__encoder = OpusBufferedEncoder()
+            self.__encoder.set_application("audio")
+            self.__encoder.set_sampling_frequency(self.samplerate)
+            self.__encoder.set_channels(self.channels)
+            self.__encoder.set_frame_size(int(self.frame_time*1000))
+            self.__opus_writer = OggOpusWriter(self.__output_path, self.__encoder)
+            
+            while self.should_run and self.__opus_writer:
+                frames_ready = len(self.frame_deque)
+                if frames_ready:
+                    self.output_latency = len(self.frame_deque)*self.frame_time
+                    self.max_latency    = self.buffer_max_height*self.frame_time
+                    self.underrun_at    = None
+                    
+                    with self.insert_lock: frame = self.frame_deque.popleft()
+
+                    if   frame.shape[1] > self.channels: frame = frame[:, 0:self.channels]
+                    elif frame.shape[1] < self.channels:
+                        for i in range(self.channels - frame.shape[1]):
+                            frame = np.hstack([frame, frame[:, -1:]])
+
+                    if frame.shape[0] < self.samples_per_frame:
+                        RNS.log("Insufficient frame data, padding with silence", RNS.LOG_DEBUG)
+                        silence_frame = np.zeros((self.samples_per_frame-frame.shape[0], frame.shape[1]), dtype=frame.dtype)
+                        frame = np.vstack([frame, silence_frame])
+
+                    self.__opus_writer.write(memoryview(bytearray((frame*self.TYPE_MAP_FACTOR).astype(np.int16).tobytes())))
+                    
+                    if len(self.frame_deque) > self.buffer_max_height:
+                        RNS.log(f"Buffer lag on {self} (height {len(self.frame_deque)}), dropping one frame", RNS.LOG_DEBUG)
+                        self.frame_deque.popleft()
+                else:
+                    if self.underrun_at == None: self.underrun_at = time.time()
+                    else: time.sleep(self.frame_time*0.1)
