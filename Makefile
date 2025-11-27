@@ -21,7 +21,15 @@ create_symlinks:
 build_wheel:
 	cp ./lib/static/* ./LXST/
 	touch ./skip_extensions
-	python3 setup.py sdist bdist_wheel
+	python3 setup.py bdist_wheel
+	rm ./skip_extensions
+	-@(rm ./LXST/*.so)
+	-@(rm ./LXST/*.dll)
+
+build_sdist:
+	cp ./lib/static/* ./LXST/
+	touch ./skip_extensions
+	python3 setup.py sdist
 	rm ./skip_extensions
 	-@(rm ./LXST/*.so)
 	-@(rm ./LXST/*.dll)
@@ -39,6 +47,8 @@ native_libs:
 persist_libs:
 	-cp ./lib/dev/*.so ./lib/static/
 	-cp ./lib/dev/*.dll ./lib/static/
+
+build_spkg: remove_symlinks build_sdist create_symlinks
 
 release: remove_symlinks build_wheel create_symlinks
 
