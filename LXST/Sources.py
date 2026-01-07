@@ -297,6 +297,9 @@ class OpusFileSource(LocalSource):
         self.sink            = sink
 
     @property
+    def running(self): return self.should_run
+
+    @property
     def codec(self): return self._codec
 
     @codec.setter

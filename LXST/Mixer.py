@@ -117,13 +117,15 @@ class Mixer(LocalSource, LocalSink):
                             if mixed_frame.max() >= 1.0 or mixed_frame.min() <= -1.0:
                                 RNS.log(f"Signal clipped on {self}", RNS.LOG_WARNING)
 
-                        if self.codec: self.sink.handle_frame(self.codec.encode(mixed_frame), self)
-                        else:          self.sink.handle_frame(mixed_frame, self)
-                    else:
-                        time.sleep(self.frame_time*0.1)
+                        try:
+                            if self.codec: self.sink.handle_frame(self.codec.encode(mixed_frame), self)
+                            else:          self.sink.handle_frame(mixed_frame, self)
+                        
+                        except Exception as e: RNS.log(f"Error while mixing frame on {self}: {e}", RNS.LOG_ERROR)
+                        
+                    else: time.sleep(self.frame_time*0.1)
 
-                else:
-                    time.sleep(self.frame_time*0.1)
+                else: time.sleep(self.frame_time*0.1)
 
     @property
     def codec(self):
