@@ -17,8 +17,8 @@ from LXST.Filters import BandPass, AGC
 PRIMITIVE_NAME = "telephony"
 
 class Profiles():
-    BANDWIDTH_ULTRA_LOW     = 0x10
-    BANDWIDTH_VERY_LOW   = 0x20
+    BANDWIDTH_ULTRA_LOW   = 0x10
+    BANDWIDTH_VERY_LOW    = 0x20
     BANDWIDTH_LOW         = 0x30
     QUALITY_MEDIUM        = 0x40
     QUALITY_HIGH          = 0x50
