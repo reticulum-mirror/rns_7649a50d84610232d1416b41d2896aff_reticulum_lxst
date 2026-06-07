@@ -9,15 +9,15 @@ if os.path.isfile("./skip_extensions"): BUILD_EXTENSIONS = False
 else:                                   BUILD_EXTENSIONS = True
 if os.name == "nt":                     BUILD_EXTENSIONS = False
 
-if BUILD_EXTENSIONS: print(f"Building LXST with native extensions...")
-else: print(f"Building LXST without native extensions...")
-
 with open("README.md", "r") as fh: long_description = fh.read()
 exec(open("LXST/_version.py", "r").read())
 
 if "--getversion" in sys.argv:
     print(__version__, end="")
     exit(0)
+
+if BUILD_EXTENSIONS: print(f"Building LXST with native extensions...")
+else: print(f"Building LXST without native extensions...")
 
 c_sources = ["LXST/Filters.c"]
 
