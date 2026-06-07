@@ -2,6 +2,7 @@ import setuptools
 from setuptools import setup, Extension
 from setuptools.command.build_ext import build_ext
 import os
+import sys
 import platform
 
 if os.path.isfile("./skip_extensions"): BUILD_EXTENSIONS = False
@@ -13,6 +14,10 @@ else: print(f"Building LXST without native extensions...")
 
 with open("README.md", "r") as fh: long_description = fh.read()
 exec(open("LXST/_version.py", "r").read())
+
+if "--getversion" in sys.argv:
+    print(__version__, end="")
+    exit(0)
 
 c_sources = ["LXST/Filters.c"]
 

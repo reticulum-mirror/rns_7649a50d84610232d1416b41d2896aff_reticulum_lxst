@@ -53,8 +53,13 @@ build_spkg: remove_symlinks build_sdist create_symlinks
 release: remove_symlinks build_wheel create_symlinks
 
 upload:
+	@echo Ready to publish release over Reticulum
+	@read VOID
+	rngit release rns://7649a50d84610232d1416b41d2896aff/reticulum/lxst create $$(python setup.py --getversion):dist --name lxst
+
+upload-pip:
 	@echo Ready to publish release, hit enter to continue
 	@read VOID
 	@echo Uploading to PyPi...
-	twine upload dist/*
+	twine upload dist/lxst-*.whl
 	@echo Release published
