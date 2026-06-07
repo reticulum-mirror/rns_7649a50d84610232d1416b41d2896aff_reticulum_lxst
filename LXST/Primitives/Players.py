@@ -2,15 +2,17 @@ import LXST
 import time
 import threading
 import os
+import gc
 
 from LXST.Sinks import LineSink
 from LXST.Sources import OpusFileSource
 
 class FilePlayer():
-    def __init__(self, path=None, device=None, loop=False):
+    def __init__(self, path=None, device=None, loop=False, release_on_finish=False):
         self._file_path = path
         self._playback_device = None
         self.__finished_callback = None
+        self.__release_on_finish = release_on_finish
         self.__loop = loop
         self.__source = None
         self.__sink = LineSink(self._playback_device)
@@ -23,10 +25,18 @@ class FilePlayer():
     @property
     def running(self):
         if not self.__source: return False
-        else: return self.__source.should_run
+        else: return self.__source.should_run or len(self.__sink.frame_deque)
 
     @property
     def playing(self): return self.running
+
+    @property
+    def release_on_finish(self): return self.__release_on_finish
+
+    @release_on_finish.setter
+    def release_on_finish(self, value):
+        if type(value) != bool: raise TypeError("Provided value is not bool")
+        else:                   self.__release_on_finish = value
 
     @property
     def finished_callback(self): return self.__finished_callback
@@ -38,10 +48,11 @@ class FilePlayer():
         else:                        self.__finished_callback = callback
 
     def __callback_job(self):
-        if self.__finished_callback:
+        if self.__finished_callback or self.__release_on_finish:
             time.sleep(0.2)
             while self.running: time.sleep(0.1)
-            self.__finished_callback(self)
+            if self.__finished_callback: self.__finished_callback(self)
+            if self.__release_on_finish: self.release()
 
     def set_source(self, path=None):
         if not path: return
@@ -60,7 +71,7 @@ class FilePlayer():
         if not self.running and self.__source:
             self.__input_pipeline.start()
             self.__output_pipeline.start()
-            if self.__finished_callback:
+            if self.__finished_callback or self.__release_on_finish:
                 threading.Thread(target=self.__callback_job, daemon=True).start()
 
     def stop(self):
@@ -69,3 +80,14 @@ class FilePlayer():
             self.__output_pipeline.stop()
 
     def play(self): self.start()
+
+    def release(self):
+        self.stop()
+        self.__source.release()
+        self.__input_pipeline.release()
+        self.__output_pipeline.release()
+        self.__input_pipeline = None
+        self.__output_pipeline = None
+        self.__sink = None
+        self.__source = None
+        self.__loopback = None

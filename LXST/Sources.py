@@ -118,7 +118,21 @@ def get_backend():
 
 Backend = get_backend()
 
-class Source(): pass
+class Source():
+    release_lock = threading.Lock()
+    def release(self):
+        if self.release_lock.locked(): return
+        with self.release_lock:
+            if not hasattr(self, "released") or not self.released:
+                self.released    = True
+                self.should_run  = False
+                self.frame_deque = None
+                self.codec       = None
+                self._sink       = None
+                self._source     = None
+                self._filters    = None
+                self.backend     = None
+
 class LocalSource(Source): pass
 class RemoteSource(Source): pass
 

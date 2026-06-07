@@ -109,6 +109,16 @@ def get_backend():
 Backend = get_backend()
 
 class Sink():
+    release_lock = threading.Lock()
+    def release(self):
+        if self.release_lock.locked(): return
+        with self.release_lock:
+            if not hasattr(self, "released") or not self.released:
+                self.released    = True
+                self.should_run  = False
+                self.frame_deque = None
+                self.backend     = None
+
     def handle_frame(self, frame, source): pass
     def can_receive(self, from_source=None): return True
 
