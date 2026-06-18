@@ -98,8 +98,6 @@ class HighPass(Filter):
 
             for i in range(1, samples):
                 output[i] = self._alpha * (output[i-1] + input_diff[i])
-
-            output = self._alpha * (output + input_diff)
             
             self._filter_states = output[-1].copy()
             self._last_inputs = frame_2d[-1].copy()
