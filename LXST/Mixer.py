@@ -17,6 +17,7 @@ class Mixer(LocalSource, LocalSink):
 
     def __init__(self, target_frame_ms=40, samplerate=None, codec=None, sink=None, gain=0.0):
         self.incoming_frames  = {}
+        self.reference_outs   = []
         self.target_frame_ms  = target_frame_ms
         self.frame_time       = self.target_frame_ms/1000
         self.should_run       = False
@@ -122,6 +123,11 @@ class Mixer(LocalSource, LocalSink):
                             else:          self.sink.handle_frame(mixed_frame, self)
                         
                         except Exception as e: RNS.log(f"Error while mixing frame on {self}: {e}", RNS.LOG_ERROR)
+
+                        try:
+                            for ref in self.reference_outs: ref.handle_reference(mixed_frame, self.samplerate)
+
+                        except Exception as e: RNS.log(f"Error while handling reference output on {self}: {e}", RNS.LOG_ERROR)
                         
                     else: time.sleep(self.frame_time*0.1)
 

@@ -775,11 +775,17 @@ class _Recorder(_Stream):
             RNS.log(f"Error while connecting input audio stream via JNI: {e}", RNS.LOG_ERROR)
             RNS.trace_exception(e)
 
-    def _record_chunk(self):
+    def _record_chunk(self, read_bytes=None):
         try:
+            if read_bytes:
+                read_mode  = self.audio_record.READ_BLOCKING
+                if read_bytes > self.min_buffer_recording: read_bytes = self.min_buffer_recording
+            else:
+                read_bytes = self.min_buffer_recording
+                read_mode  = self.audio_record.READ_NON_BLOCKING
+
             audio_data = bytearray(self.min_buffer_recording)
-            bytes_read = self.audio_record.read(audio_data, 0, self.min_buffer_recording, self.audio_record.READ_NON_BLOCKING)
-            if bytes_read == 0: time.sleep(0.005)
+            bytes_read = self.audio_record.read(audio_data, 0, read_bytes, read_mode)
 
             if   bytes_read == self.audio_record.ERROR_INVALID_OPERATION: RNS.log(f"Invalid operation error from JNI on {self}", RNS.LOG_ERROR)
             elif bytes_read == self.audio_record.ERROR_BAD_VALUE:         RNS.log(f"Bad value error from JNI on {self}", RNS.LOG_ERROR)
@@ -804,9 +810,23 @@ class _Recorder(_Stream):
             
             else:
                 while captured_frames < numframes:
-                    chunk = self._record_chunk()
-                    captured_data.append(chunk)
-                    captured_frames += len(chunk)/self.channels
+                    try:
+                        m_frames = numframes - captured_frames
+                        m_bytes = m_frames * self.bytes_per_sample
+                        # RNS.log(f"RECORD {m_bytes} bytes ({m_frames} samples) (min {self.min_buffer_recording})") # TODO: Remove
+                        chunk = self._record_chunk(read_bytes=m_bytes)
+                        captured_data.append(chunk)
+                        captured_frames += len(chunk)/self.channels
+                        if captured_frames < numframes:
+                            wait_factor=0.65
+                            m_frames = numframes - captured_frames
+                            st = (m_frames / self._samplerate) * wait_factor
+                            # RNS.log(f"Missing {m_frames} samples, sleeping for {RNS.prettyshorttime(st)}") # TODO: Remove
+                            time.sleep(st)
+
+                    except Exception as e:
+                        RNS.log(f"Could not acquire audio frame: {e}", RNS.LOG_WARNING)
+                        return None
                 
                 to_split = int(len(chunk) - (captured_frames - numframes) * self.channels)
                 captured_data[-1], self._pending_chunk = numpy.split(captured_data[-1], [to_split])

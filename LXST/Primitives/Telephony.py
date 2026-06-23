@@ -11,7 +11,7 @@ from LXST.Sinks import LineSink
 from LXST.Sources import LineSource, OpusFileSource
 from LXST.Generators import ToneSource
 from LXST.Network import SignallingReceiver, Packetizer, LinkSource
-from LXST.Filters import BandPass, AGC
+from LXST.Filters import BandPass, AGC, EchoSuppressor
 
 
 PRIMITIVE_NAME = "telephony"
@@ -93,6 +93,18 @@ class Profiles():
         else:                                         return 60
 
     @staticmethod
+    def get_buffer_frames(profile):
+        if   profile == Profiles.BANDWIDTH_ULTRA_LOW: return 2
+        elif profile == Profiles.BANDWIDTH_VERY_LOW:  return 2
+        elif profile == Profiles.BANDWIDTH_LOW:       return 2
+        elif profile == Profiles.QUALITY_MEDIUM:      return 5
+        elif profile == Profiles.QUALITY_HIGH:        return 5
+        elif profile == Profiles.QUALITY_MAX:         return 5
+        elif profile == Profiles.LATENCY_LOW:         return 3
+        elif profile == Profiles.LATENCY_ULTRA_LOW:   return 2
+        else:                                         return 5
+
+    @staticmethod
     def next_profile(profile):
         profile_list = Profiles.available_profiles()
         if profile in profile_list:
@@ -155,6 +167,8 @@ class Telephone(SignallingReceiver):
         self.receive_gain = receive_gain
         self.transmit_gain = transmit_gain
         self.use_agc = True
+        self.use_bandpass = True
+        self.use_echo_cancellation = True
         self.active_call = None
         self.call_status = Signalling.STATUS_AVAILABLE
         self._external_busy = False
@@ -164,6 +178,7 @@ class Telephone(SignallingReceiver):
         self.__busy_callback = None
         self.__rejected_callback = None
         self.target_frame_time_ms = None
+        self.target_buffer_frames = None
         self.audio_output = None
         self.audio_input = None
         self.dial_tone = None
@@ -264,6 +279,22 @@ class Telephone(SignallingReceiver):
     def disable_agc(self, disable=True):
         if disable == True: self.use_agc = False
         else:               self.use_agc = True
+
+    def enable_bandpass(self, enable=True):
+        if enable == True: self.use_bandpass = True
+        else:              self.use_bandpass = False
+
+    def disable_bandpass(self, disable=True):
+        if disable == True: self.use_bandpass = False
+        else:               self.use_bandpass = True
+
+    def enable_echo_cancellation(self, enable=True):
+        if enable == True: self.use_echo_cancellation = True
+        else:              self.use_echo_cancellation = False
+
+    def disable_echo_cancellation(self, disable=True):
+        if disable == True: self.use_echo_cancellation = False
+        else:               self.use_echo_cancellation = True
 
     def set_low_latency_output(self, enabled):
         if enabled:
@@ -487,14 +518,17 @@ class Telephone(SignallingReceiver):
                     self.active_call.profile = profile
                     self.transmit_codec = Profiles.get_codec(self.active_call.profile)
                     self.target_frame_time_ms = Profiles.get_frame_time(self.active_call.profile)
+                    self.target_buffer_frames = Profiles.get_buffer_frames(self.active_call.profile)
                     if not from_signalling: self.signal(Signalling.PREFERRED_PROFILE+self.active_call.profile, self.active_call)
                     self.__reconfigure_transmit_pipeline()
+                    self.receive_mixer.set_source_max_frames(self.active_call.audio_source, self.target_buffer_frames)
 
     def __select_call_profile(self, profile=None):
         if profile == None: profile = Profiles.DEFAULT_PROFILE
         self.active_call.profile = profile
         self.__select_call_codecs(self.active_call.profile)
         self.__select_call_frame_time(self.active_call.profile)
+        self.__select_call_buffer_frames(self.active_call.profile)
         RNS.log(f"Selected call profile 0x{RNS.hexrep(profile, delimit=False)}", RNS.LOG_DEBUG)
 
     def __select_call_codecs(self, profile=None):
@@ -503,6 +537,9 @@ class Telephone(SignallingReceiver):
 
     def __select_call_frame_time(self, profile=None):
         self.target_frame_time_ms = Profiles.get_frame_time(profile)
+
+    def __select_call_buffer_frames(self, profile=None):
+        self.target_buffer_frames = Profiles.get_buffer_frames(self.active_call.profile)
 
     def __reset_dialling_pipelines(self):
         with self.pipeline_lock:
@@ -605,8 +642,15 @@ class Telephone(SignallingReceiver):
                     RNS.log(f"Opening audio pipelines for call with {RNS.prettyhexrep(identity.hash)}", RNS.LOG_DEBUG)
                     if self.active_call.is_incoming: self.signal(Signalling.STATUS_CONNECTING, self.active_call)
 
-                    if self.use_agc: self.active_call.filters = [BandPass(250, 8500), AGC(target_level=-15.0)]
-                    else:            self.active_call.filters = [BandPass(250, 8500)]
+                    filter_chain = []
+                    if self.use_bandpass: filter_chain.append(BandPass(250, 8500))
+                    if self.use_agc:      filter_chain.append(AGC(target_level=-15.0))
+                    if self.use_echo_cancellation:
+                        self.active_call.echo_suppressor = EchoSuppressor()
+                        self.receive_mixer.reference_outs = [self.active_call.echo_suppressor]
+                        filter_chain.append(self.active_call.echo_suppressor)
+
+                    self.active_call.filters = filter_chain
 
                     self.__prepare_dialling_pipelines()
                     self.active_call.packetizer = Packetizer(self.active_call, failure_callback=self.__packetizer_failure)
@@ -619,7 +663,7 @@ class Telephone(SignallingReceiver):
                     self.transmit_pipeline =   Pipeline(source=self.transmit_mixer, codec=self.transmit_codec, sink=self.active_call.packetizer)
                     
                     self.active_call.audio_source = LinkSource(link=self.active_call, signalling_receiver=self, sink=self.receive_mixer)
-                    self.receive_mixer.set_source_max_frames(self.active_call.audio_source, 2)
+                    self.receive_mixer.set_source_max_frames(self.active_call.audio_source, self.target_buffer_frames)
                     
                     self.signal(Signalling.STATUS_ESTABLISHED, self.active_call)
 
