@@ -12,3 +12,5 @@ __pycache__/*
 LXST/__pycache__
 wheelhouse
 worklog
+tests/LXST
+tests/*.opus
