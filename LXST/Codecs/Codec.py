@@ -1,3 +1,5 @@
+# Copyright 2024-2026, Mark Qvist
+
 import numpy as np
 from .libs.pydub import AudioSegment
 

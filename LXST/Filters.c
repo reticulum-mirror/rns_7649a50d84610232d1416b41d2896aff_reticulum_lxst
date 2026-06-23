@@ -1,3 +1,5 @@
+// Copyright 2024-2026, Mark Qvist
+
 #include <math.h>
 
 void highpass_filter(float* input, float* output, int samples, int channels, float alpha, float* filter_states, float* last_inputs) {

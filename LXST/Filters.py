@@ -1,3 +1,5 @@
+# Copyright 2024-2026, Mark Qvist
+
 from importlib.util import find_spec
 from collections import deque
 import numpy as np

@@ -1,3 +1,5 @@
+# Copyright 2024-2026, Mark Qvist
+
 import threading
 
 from .Sources import *
