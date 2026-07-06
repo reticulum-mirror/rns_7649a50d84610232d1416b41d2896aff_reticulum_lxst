@@ -201,6 +201,10 @@ class LineSink(LocalSink):
                         self.underrun_at    = None
 
                         with self.insert_lock: frame = self.frame_deque.popleft()
+                        if self.channels != self.backend.device.channels:
+                            RNS.log(f"Underlying device for {self} re-configured channel map mid-stream (from {self.channels} to {self.backend.device.channels})", RNS.LOG_WARNING)
+                            self.channels = self.backend.device.channels
+
                         if frame.shape[1] > self.channels: frame = frame[:, 0:self.channels]
                         player.play(frame)
 
