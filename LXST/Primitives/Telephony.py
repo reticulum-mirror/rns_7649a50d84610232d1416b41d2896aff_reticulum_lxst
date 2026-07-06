@@ -792,7 +792,7 @@ class Telephone(SignallingReceiver):
         for signal in signals:
             if source != self.active_call: RNS.log("Received signalling on non-active call, ignoring", RNS.LOG_DEBUG)
             else:
-                if self.active_call.is_incoming and not self.active_call.answered and signal < Signalling.PREFERRED_PROFILE: return
+                if self.active_call.is_incoming and not self.active_call.answered and signal < Signalling.PREFERRED_MODE: return
                 elif signal == Signalling.STATUS_BUSY:
                     RNS.log("Remote is busy, terminating", RNS.LOG_DEBUG)
                     self.active_call.is_terminating = True
