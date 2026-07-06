@@ -25,7 +25,8 @@ class SignallingReceiver():
         if self.proxy: self.proxy.signalling_received(signals, source)
 
     def signal(self, signal, destination, immediate=True):
-        signalling_data = {FIELD_SIGNALLING:[signal]}
+        if type(signal) != list: signalling_data = {FIELD_SIGNALLING: [signal]}
+        else:                    signalling_data = {FIELD_SIGNALLING: signal}
 
         if immediate:
             signalling_packet = RNS.Packet(destination, mp.packb(signalling_data), create_receipt=False)

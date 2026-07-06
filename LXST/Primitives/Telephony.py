@@ -459,9 +459,12 @@ class Telephone(SignallingReceiver):
             if not self.transmit_mixer: return False
             else: return self.transmit_mixer.muted
     
-    def signal(self, signal, link):
-        if signal in Signalling.AUTO_STATUS_CODES: self.call_status = signal
-        super().signal(signal, link)
+    def signal(self, signals, link):
+        if type(signals) != list: signals = [signals]
+        for signal in signals:
+            if signal in Signalling.AUTO_STATUS_CODES: self.call_status = signal
+
+        super().signal(signals, link)
 
     def answer(self, identity):
         with self.call_handler_lock:
@@ -812,8 +815,8 @@ class Telephone(SignallingReceiver):
                     RNS.log("Identification accepted, remote is now ringing", RNS.LOG_DEBUG)
                     self.call_status = signal
                     self.__prepare_dialling_pipelines()
-                    self.signal(Signalling.PREFERRED_PROFILE+self.active_call.profile, self.active_call)
-                    self.signal(Signalling.PREFERRED_MODE+self.active_call.call_mode, self.active_call)
+                    self.signal([Signalling.PREFERRED_PROFILE+self.active_call.profile,
+                                 Signalling.PREFERRED_MODE+self.active_call.call_mode], self.active_call)
                     if self.active_call and self.active_call.is_outgoing: self.__activate_dial_tone()
                 elif signal == Signalling.STATUS_CONNECTING:
                     RNS.log("Call answered, remote is performing call setup, opening audio pipelines", RNS.LOG_DEBUG)
