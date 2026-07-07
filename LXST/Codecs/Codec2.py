@@ -121,3 +121,5 @@ class Codec2(Codec):
         frame_samples[:, 0] = decoded_samples
 
         return frame_samples
+
+    def __str__(self): return f"<LXST/Codec2 @ {RNS.prettyspeed(self.mode)}>"

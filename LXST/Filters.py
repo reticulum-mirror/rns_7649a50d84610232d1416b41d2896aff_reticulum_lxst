@@ -336,6 +336,7 @@ class EchoSuppressor(Filter):
         self.preemph_alpha = preemph_alpha
         self.acc_forget = acc_forget
         self.estimate_every_n = estimate_every_n
+        self.debug_metrics = False
 
         self.cng_enabled = cng_enabled
         self.cng_gain = cng_gain
@@ -931,7 +932,7 @@ class EchoSuppressor(Filter):
                 output = output + cng[:, np.newaxis]
                 output = np.clip(output, -1.0, 1.0)
 
-        RNS.log(f"GT: {self._current_gain < 0.5}, nA: {near_end_active}, EC: {echo_correlated}, SER: {round(self.ser_db,2)} dB, coupling: {round(self._coupling_db,2)} dB, finish {RNS.prettyshorttime(time.time()-st)}", RNS.LOG_DEBUG)
+        if self.debug_metrics: RNS.log(f"GT: {self._current_gain < 0.5}, nA: {near_end_active}, EC: {echo_correlated}, SER: {round(self.ser_db,2)} dB, coupling: {round(self._coupling_db,2)} dB, finish {RNS.prettyshorttime(time.time()-st)}", RNS.LOG_DEBUG)
 
         return output
 
