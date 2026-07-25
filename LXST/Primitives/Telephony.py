@@ -646,9 +646,8 @@ class Telephone(SignallingReceiver):
         if self.receive_pipeline == None: self.receive_pipeline = Pipeline(source=self.receive_mixer, codec=Null(), sink=self.audio_output)
 
     def __update_audio_output(self):
-        if self.audio_output and self.receive_pipeline:
+        if self.active_call and self.audio_output and self.receive_pipeline and self.receive_mixer:
             with self.pipeline_lock:
-                self.receive_mixer.dbgout = True
                 previous_output = self.audio_output
                 previous_pipeline = self.receive_pipeline
                 self.audio_output = LineSink(preferred_device=self.speaker_device) if not self.__loudspeaker_on else LineSink(preferred_device=self.loudspeaker_device)
