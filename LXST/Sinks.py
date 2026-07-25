@@ -145,6 +145,7 @@ class LineSink(LocalSink):
         self.autostart_min        = self.AUTOSTART_MIN
         self.buffer_max_height    = self.MAX_FRAMES-3
         self.low_latency          = low_latency
+        self.streaming            = False
         
         self.preferred_samplerate = Backend.SAMPLERATE
         self.backend              = Backend(preferred_device=self.preferred_device, samplerate=self.preferred_samplerate)
@@ -173,7 +174,9 @@ class LineSink(LocalSink):
                 RNS.log(f"{self} starting at {self.samples_per_frame} samples per frame, {self.channels} channels", RNS.LOG_DEBUG)
 
             if self.autodigest and not self.should_run:
-                if len(self.frame_deque) >= self.autostart_min: self.start()
+                if len(self.frame_deque) >= self.autostart_min:
+                    RNS.log(f"Auto-digest buffer height of {self.autostart_min} reached on {self}, starting", RNS.LOG_DEBUG) if RNS.sl(RNS.LOG_DEBUG) else None
+                    self.start()
 
     def start(self):
         if not self.should_run:
@@ -183,6 +186,12 @@ class LineSink(LocalSink):
 
     def stop(self):
         self.should_run = False
+
+    def wait_for_frames(self):
+        if len(self.frame_deque) < self.autostart_min:
+            self.stop()
+            self.autodigest = True
+            RNS.log(f"{self} waiting for frames before re-engaging output", RNS.LOG_DEBUG) if RNS.sl(RNS.LOG_DEBUG) else None
 
     def enable_low_latency(self):
         self.__wants_low_latency = True
@@ -209,7 +218,7 @@ class LineSink(LocalSink):
                         player.play(frame)
 
                         if len(self.frame_deque) > self.buffer_max_height:
-                            RNS.log(f"Buffer lag on {self} (height {len(self.frame_deque)}), dropping one frame", RNS.LOG_DEBUG)
+                            RNS.log(f"Buffer lag on {self} (height {len(self.frame_deque)}), dropping one frame", RNS.LOG_DEBUG) if RNS.sl(RNS.LOG_DEBUG) else None
                             self.frame_deque.popleft()
                     
                     else:
@@ -217,6 +226,7 @@ class LineSink(LocalSink):
                             # TODO: Remove debug
                             # RNS.log(f"Buffer underrun on {self}", RNS.LOG_DEBUG)
                             self.underrun_at = time.time()
+                            if self.streaming: time.sleep((self.frame_time*self.buffer_max_height)/3.0)
                         else:
                             if time.time() > self.underrun_at+(self.frame_time*self.frame_timeout):
                                 RNS.log(f"No frames available on {self}, stopping playback", RNS.LOG_DEBUG)
@@ -341,7 +351,7 @@ class OpusFileSink(LocalSink):
                             frame = np.hstack([frame, frame[:, -1:]])
 
                     if frame.shape[0] < self.samples_per_frame:
-                        RNS.log("Insufficient frame data, padding with silence", RNS.LOG_DEBUG)
+                        RNS.log("Insufficient frame data, padding with silence", RNS.LOG_DEBUG) if RNS.sl(RNS.LOG_DEBUG) else None
                         silence_frame = np.zeros((self.samples_per_frame-frame.shape[0], frame.shape[1]), dtype=frame.dtype)
                         frame = np.vstack([frame, silence_frame])
 

@@ -606,6 +606,7 @@ class Telephone(SignallingReceiver):
                     if not from_signalling: self.signal(Signalling.PREFERRED_PROFILE+self.active_call.profile, self.active_call)
                     self.__reconfigure_transmit_pipeline()
                     self.receive_mixer.set_source_max_frames(self.active_call.audio_source, self.target_buffer_frames)
+                    self.__update_output_buffer_targets()
 
     def __select_call_profile(self, profile=None):
         if profile == None: profile = Profiles.DEFAULT_PROFILE
@@ -637,6 +638,17 @@ class Telephone(SignallingReceiver):
             self.receive_mixer = None
             self.__prepare_dialling_pipelines()
 
+    def __update_output_buffer_targets(self):
+        if self.audio_output and self.target_buffer_frames:
+            if self.audio_output.buffer_max_height != self.target_buffer_frames:
+                self.audio_output.buffer_max_height = self.target_buffer_frames+1
+                RNS.log(f"Updated {self.audio_output} buffer size to {self.audio_output.buffer_max_height} frames", RNS.LOG_DEBUG)
+            if self.audio_output.autostart_min != self.target_buffer_frames:
+                self.audio_output.autostart_min = max(1, self.target_buffer_frames-2)
+                RNS.log(f"Updated {self.audio_output} buffer trigger height to {self.audio_output.autostart_min} frames", RNS.LOG_DEBUG)
+                self.audio_output.streaming = True
+                self.audio_output.wait_for_frames()
+
     def __prepare_dialling_pipelines(self):
         self.__select_call_profile(self.active_call.profile)
         self.__select_call_mode(self.active_call.call_mode)
@@ -644,6 +656,7 @@ class Telephone(SignallingReceiver):
         if self.receive_mixer    == None: self.receive_mixer = Mixer(target_frame_ms=self.target_frame_time_ms, gain=self.receive_gain)
         if self.dial_tone        == None: self.dial_tone = ToneSource(frequency=self.dial_tone_frequency, gain=0.0, ease_time_ms=self.dial_tone_ease_ms, target_frame_ms=self.target_frame_time_ms, codec=Null(), sink=self.receive_mixer)
         if self.receive_pipeline == None: self.receive_pipeline = Pipeline(source=self.receive_mixer, codec=Null(), sink=self.audio_output)
+        self.__update_output_buffer_targets()
 
     def __update_audio_output(self):
         if self.active_call and self.audio_output and self.receive_pipeline and self.receive_mixer:
