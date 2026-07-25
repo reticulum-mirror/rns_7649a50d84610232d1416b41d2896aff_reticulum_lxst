@@ -869,7 +869,9 @@ class EchoSuppressor(Filter):
         if corr > self.corr_threshold: self._last_echo_correlation = time.time()
         echo_correlated = now < self._last_echo_correlation + self.echo_correlation_window
 
-        if mic_energy > 2e-6: self.ser_db = 10.0 * np.log10(mic_energy/predicted_echo_energy + 1e-12)
+        if mic_energy > 2e-6:
+            try: self.ser_db = 10.0 * np.log10(mic_energy/predicted_echo_energy + 1e-12)
+            except Exception as e: RNS.log(f"Numerical error in energy calculation: {e}", RNS.LOG_DEBUG)
 
         # Near-end energy estimate (residual after predicted echo)
         near_energy = max(0.0, mic_energy - predicted_echo_energy)

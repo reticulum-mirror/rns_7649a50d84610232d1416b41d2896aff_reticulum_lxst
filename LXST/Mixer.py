@@ -102,6 +102,7 @@ class Mixer(LocalSource, LocalSink):
         else:                  return 10**(self.gain/10)
 
     def _mixer_job(self):
+        if self.mixer_lock.locked(): return
         with self.mixer_lock:
             while self.should_run:
                 if self.sink and self.sink.can_receive():
@@ -134,6 +135,8 @@ class Mixer(LocalSource, LocalSink):
                     else: time.sleep(self.frame_time*0.1)
 
                 else: time.sleep(self.frame_time*0.1)
+
+            RNS.log(f"{self} stopped", RNS.LOG_DEBUG)
 
     @property
     def codec(self):

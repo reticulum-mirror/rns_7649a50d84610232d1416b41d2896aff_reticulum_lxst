@@ -26,6 +26,7 @@ class Pipeline():
 
         if isinstance(sink, Loopback):     sink.samplerate = source.samplerate
         if isinstance(source, Loopback):   source._sink = sink
+        if isinstance(source, Mixer):      source._sink = sink
         if isinstance(sink, Packetizer):   sink.source = source
         if isinstance(sink, OpusFileSink): sink.source = source
 

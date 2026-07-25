@@ -231,7 +231,7 @@ class _PulseAudio:
                 info.append(info_dict)
 
         self._pa_context_get_source_info_by_name(self.context, id.encode(), callback, _ffi.NULL)
-        return info[0]
+        return info[0] if len(info) else None
 
     @property
     def sink_list(self):

@@ -216,11 +216,13 @@ class Telephone(SignallingReceiver):
         self.transmit_pipeline = None
         self.__receive_muted = False
         self.__transmit_muted = False
+        self.__loudspeaker_on = False
         self.ringer_lock = threading.Lock()
         self.ringer_output = None
         self.ringer_pipeline = None
         self.ringtone_path = None
         self.speaker_device = None
+        self.loudspeaker_device = None
         self.microphone_device = None
         self.ringer_device = None
         self.low_latency_output = False
@@ -278,6 +280,10 @@ class Telephone(SignallingReceiver):
     def set_speaker(self, device):
         self.speaker_device = device
         RNS.log(f"{self} speaker device set to {device}", RNS.LOG_DEBUG)
+
+    def set_loudspeaker(self, device):
+        self.loudspeaker_device = device
+        RNS.log(f"{self} loudspeaker device set to {device}", RNS.LOG_DEBUG)
 
     def set_microphone(self, device):
         self.microphone_device = device
@@ -459,6 +465,10 @@ class Telephone(SignallingReceiver):
             if not self.transmit_mixer: return False
             else: return self.transmit_mixer.muted
     
+    @property
+    def loudspeaker_on(self):
+        return self.__loudspeaker_on
+
     def signal(self, signals, link):
         if type(signals) != list: signals = [signals]
         for signal in signals:
@@ -509,6 +519,7 @@ class Telephone(SignallingReceiver):
                 self.call_status       = Signalling.STATUS_AVAILABLE
                 self.__receive_muted   = False
                 self.__transmit_muted  = False
+                self.__loudspeaker_on  = False
                 if remote_identity: RNS.log(f"Call with {RNS.prettyhexrep(remote_identity.hash)} terminated", RNS.LOG_DEBUG)
                 else: RNS.log(f"Outgoing call could not be connected, link establishment failed", RNS.LOG_DEBUG)
         
@@ -536,6 +547,16 @@ class Telephone(SignallingReceiver):
     def unmute_transmit(self, unmute=True):
         self.__transmit_muted = not unmute
         if self.transmit_mixer: self.transmit_mixer.unmute(unmute)
+
+    def enable_loudspeaker(self, enable=True):
+        was_on = self.__loudspeaker_on
+        self.__loudspeaker_on = enable
+        if was_on != self.__loudspeaker_on: self.__update_audio_output()
+
+    def disable_loudspeaker(self, disable=True):
+        was_on = self.__loudspeaker_on
+        self.__loudspeaker_on = not disable
+        if was_on != self.__loudspeaker_on: self.__update_audio_output()
 
     def squelch_transmit(self, squelch=True):
         if self.active_call and hasattr(self.active_call, "packetizer"):
@@ -619,10 +640,23 @@ class Telephone(SignallingReceiver):
     def __prepare_dialling_pipelines(self):
         self.__select_call_profile(self.active_call.profile)
         self.__select_call_mode(self.active_call.call_mode)
-        if self.audio_output     == None: self.audio_output = LineSink(preferred_device=self.speaker_device)
+        if self.audio_output     == None: self.audio_output = LineSink(preferred_device=self.speaker_device) if not self.__loudspeaker_on else LineSink(preferred_device=self.loudspeaker_device)
         if self.receive_mixer    == None: self.receive_mixer = Mixer(target_frame_ms=self.target_frame_time_ms, gain=self.receive_gain)
         if self.dial_tone        == None: self.dial_tone = ToneSource(frequency=self.dial_tone_frequency, gain=0.0, ease_time_ms=self.dial_tone_ease_ms, target_frame_ms=self.target_frame_time_ms, codec=Null(), sink=self.receive_mixer)
         if self.receive_pipeline == None: self.receive_pipeline = Pipeline(source=self.receive_mixer, codec=Null(), sink=self.audio_output)
+
+    def __update_audio_output(self):
+        if self.audio_output and self.receive_pipeline:
+            with self.pipeline_lock:
+                self.receive_mixer.dbgout = True
+                previous_output = self.audio_output
+                previous_pipeline = self.receive_pipeline
+                self.audio_output = LineSink(preferred_device=self.speaker_device) if not self.__loudspeaker_on else LineSink(preferred_device=self.loudspeaker_device)
+                self.receive_pipeline = Pipeline(source=self.receive_mixer, codec=Null(), sink=self.audio_output)
+                self.receive_pipeline.start()
+                previous_pipeline.stop()
+                previous_output.stop()
+                self.receive_mixer.start()
 
     def __activate_ring_tone(self):
         if self.ringtone_path != None and os.path.isfile(self.ringtone_path):
