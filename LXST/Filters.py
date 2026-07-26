@@ -186,6 +186,7 @@ class AGC(Filter):
         self.hold_time         = hold_time
         self.target_linear     = 10 ** (target_level / 10)
         self.max_gain_linear   = 10 ** (max_gain / 10)
+        self.paused            = False
         self._samplerate       = None
         self._channels         = None
         self._current_gain_lin = 1.0
@@ -198,6 +199,7 @@ class AGC(Filter):
     def handle_frame(self, frame, samplerate):
         # TODO: Remove debug
         # st = time.time()
+        if self.paused:     return frame
         if len(frame) == 0: return frame
         if len(frame.shape) == 1: frame_2d = frame.reshape(-1, 1)
         else:                     frame_2d = frame

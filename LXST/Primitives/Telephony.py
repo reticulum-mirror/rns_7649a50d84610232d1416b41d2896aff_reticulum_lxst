@@ -558,12 +558,24 @@ class Telephone(SignallingReceiver):
         self.__loudspeaker_on = not disable
         if was_on != self.__loudspeaker_on: self.__update_audio_output()
 
+    def pause_agc(self, pause=True):
+        if self.active_call and hasattr(self.active_call, "filter_agc"):
+            if pause: self.active_call.filter_agc.paused = True
+            else:     self.active_call.filter_agc.paused = False
+
+    def resume_agc(self, resume=True):
+        if self.active_call and hasattr(self.active_call, "filter_agc"):
+            if resume: self.active_call.filter_agc.paused = False
+            else:      self.active_call.filter_agc.paused = True
+
     def squelch_transmit(self, squelch=True):
+        self.pause_agc(squelch)
         if self.active_call and hasattr(self.active_call, "packetizer"):
             if squelch: self.active_call.packetizer.squelch()
             else:       self.active_call.packetizer.unsquelch()
 
     def unsquelch_transmit(self, unsquelch=True):
+        self.resume_agc(unsquelch)
         if self.active_call and hasattr(self.active_call, "packetizer"):
             if unsquelch: self.active_call.packetizer.unsquelch()
             else:         self.active_call.packetizer.squelch()
@@ -755,7 +767,8 @@ class Telephone(SignallingReceiver):
 
                     filter_chain = []
                     if self.use_bandpass: filter_chain.append(BandPass(250, 8500))
-                    if self.use_agc:      filter_chain.append(AGC(target_level=-15.0))
+                    if self.use_agc:      self.active_call.filter_agc = AGC(target_level=-15.0)
+                    if self.use_agc:      filter_chain.append(self.active_call.filter_agc)
                     if self.use_echo_cancellation:
                         self.active_call.echo_suppressor = EchoSuppressor()
                         self.receive_mixer.reference_outs = [self.active_call.echo_suppressor]
