@@ -588,8 +588,15 @@ class Telephone(SignallingReceiver):
         self.transmit_gain = float(gain)
         if self.transmit_mixer: self.transmit_mixer.set_gain(self.transmit_gain)
 
+    def disable_remote_mode_follow(self):
+        if not self.active_call: return False
+        else:
+            self.active_call.mode_switch_disabled = True
+            return True
+
     def switch_mode(self, mode=None, from_signalling=False):
         if self.active_call:
+            if from_signalling and hasattr(self.active_call, "mode_switch_disabled"): return
             if   self.active_call.call_mode == mode:     return
             elif not mode in Profiles.available_modes(): return
             else:
