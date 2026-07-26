@@ -679,6 +679,7 @@ class Telephone(SignallingReceiver):
 
             def job():
                 with self.ringer_lock:
+                    time.sleep(0.5)
                     while self.active_call and self.active_call.is_incoming and self.call_status == Signalling.STATUS_RINGING:
                         if not self.ringer_pipeline.running: self.ringer_pipeline.start()
                         time.sleep(0.1)
