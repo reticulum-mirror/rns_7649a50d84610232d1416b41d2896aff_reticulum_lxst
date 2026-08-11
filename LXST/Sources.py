@@ -285,7 +285,10 @@ class OpusFileSource(LocalSource):
     DEFAULT_FRAME_MS = 100
     TYPE_MAP_FACTOR  = np.iinfo("int16").max
 
-    def __init__(self, file_path, target_frame_ms=DEFAULT_FRAME_MS, loop=False, codec=None, sink=None, timed=False):
+    @staticmethod
+    def linear_gain(gain_db): return 10**(gain_db/10)
+
+    def __init__(self, file_path, target_frame_ms=DEFAULT_FRAME_MS, loop=False, codec=None, sink=None, timed=False, gain=0.0):
         self.target_frame_ms = target_frame_ms
         self.loop            = loop
         self.timed           = timed
@@ -294,6 +297,8 @@ class OpusFileSource(LocalSource):
         self.ingest_thread   = None
         self.next_frame      = None
         self._codec          = None
+        self._gain_db        = gain
+        self.__gain          = self.linear_gain(self._gain_db)
 
         if file_path == None: raise TypeError(f"{self} initialised with invalid file path: {file_path}")
         elif os.path.isfile(file_path):
@@ -314,6 +319,16 @@ class OpusFileSource(LocalSource):
 
     @property
     def running(self): return self.should_run
+
+    @property
+    def gain(self): return self._gain_db
+
+    @gain.setter
+    def gain(self, db):
+        try: db = float(db)
+        except: raise TypeError("Invalid gain type, must be decibel as a floating point number")
+        self._gain_db = db
+        self.__gain = self.linear_gain(self._gain_db)
 
     @property
     def codec(self): return self._codec
@@ -363,6 +378,7 @@ class OpusFileSource(LocalSource):
                     fi += 1
                     fs = (fi-1)*spf; fe = min(fi*spf, sc)
                     frame_samples = self.samples[fs:fe, :]
+                    if self.__gain != 1.0: frame_samples *= self.__gain
                     if len(frame_samples) < 1:
                         if self.loop:
                             RNS.log(f"{self} exhausted file samples, looping...", RNS.LOG_DEBUG)

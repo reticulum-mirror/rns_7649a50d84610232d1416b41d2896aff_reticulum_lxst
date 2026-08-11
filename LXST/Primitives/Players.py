@@ -10,19 +10,30 @@ from LXST.Sinks import LineSink
 from LXST.Sources import OpusFileSource
 
 class FilePlayer():
-    def __init__(self, path=None, device=None, loop=False, release_on_finish=False):
+    def __init__(self, path=None, device=None, loop=False, gain=0.0, release_on_finish=False):
         self._file_path = path
         self._playback_device = None
         self.__finished_callback = None
         self.__release_on_finish = release_on_finish
         self.__loop = loop
         self.__source = None
+        self.__gain = gain
         self.__sink = LineSink(self._playback_device)
         self.__raw             = LXST.Codecs.Raw()
         self.__loopback        = LXST.Sources.Loopback()
         self.__output_pipeline = LXST.Pipeline(source=self.__loopback, codec=self.__raw, sink=self.__sink)
         self.__input_pipeline  = None
         if path: self.set_source(self._file_path)
+
+    @property
+    def gain(self): return self.__gain
+
+    @gain.setter
+    def gain(self, db):
+        try: db = float(db)
+        except: raise TypeError("Invalid gain type, must be decibel as a floating point number")
+        self.__gain = db
+        if self.__source: self.__source.gain = self.__gain
 
     @property
     def running(self):
@@ -61,7 +72,7 @@ class FilePlayer():
         else:
             if not os.path.isfile(path): raise OSError(f"File not found: {path}")
             else:
-                self.__source = OpusFileSource(path, loop=self.__loop)
+                self.__source = OpusFileSource(path, loop=self.__loop, gain=self.gain)
                 self.__input_pipeline = LXST.Pipeline(source=self.__source, codec=self.__raw, sink=self.__loopback)
 
     def loop(self, loop=True):
