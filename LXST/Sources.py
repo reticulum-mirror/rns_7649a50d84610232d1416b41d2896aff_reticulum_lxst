@@ -269,9 +269,12 @@ class LineSource(LocalSource):
                             for f in self.filters: frame_samples = f.handle_frame(frame_samples, self.samplerate)
                         if self.__gain != 1.0: frame_samples *= self.__gain
                         if self.codec:
-                            frame = self.codec.encode(frame_samples)
                             if self.sink and self.sink.can_receive(from_source=self):
-                                self.sink.handle_frame(frame, self)
+                                try:
+                                    frame = self.codec.encode(frame_samples)
+                                    self.sink.handle_frame(frame, self)
+                                except Exception as e: RNS.log(f"Encode error on {self}: {e}", RNS.LOG_DEBUG) if RNS.sl(RNS.LOG_DEBUG) else None
+
                         if not ease_in_completed:
                             d = time.time()-started
                             self.__gain = (d/self.ease_in)*self.__target_gain
@@ -388,8 +391,10 @@ class OpusFileSource(LocalSource):
                             self.should_run = False
                     else:
                         if self.codec:
-                            frame = self.codec.encode(frame_samples)
                             if self.sink and self.sink.can_receive(from_source=self):
-                                self.sink.handle_frame(frame, self)
+                                try:
+                                    frame = self.codec.encode(frame_samples)
+                                    self.sink.handle_frame(frame, self)
+                                except Exception as e: RNS.log(f"Encode error on {self}: {e}", RNS.LOG_DEBUG) if RNS.sl(RNS.LOG_DEBUG) else None
                 else:
                     time.sleep(self.frame_time*0.1)
