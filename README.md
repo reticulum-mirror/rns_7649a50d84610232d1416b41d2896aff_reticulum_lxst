@@ -1,5 +1,16 @@
 # Lightweight Extensible Signal Transport
 
+> [!WARNING]
+> Several hastily launched, incorrect, and in most cases entirely LLM-generated fakes of LXST and associated tools and applications are currently being circulated and marketed. Most of these "projects" violate the license that LXST was published under, but claim independent ownership and license grants. Such claims or grants are **not** legally valid, and **not** recognized by the LXST author and copyright holder.
+>
+> Any claimed assertion of copyright or grant of license that such projects are making are [void grants](https://reticulum.network/manual/brandolinis.html#void-grants-legal-foundations-of-machine-generated-code).
+>
+> Both the violators themselves, and **all** downstream projects using the infringing derivatives, are **directly** and **personally** liable for the legal consequences.
+>
+> For more detailed information, see the relevant sections of the [Brandolini's Reference](https://reticulum.network/manual/brandolinis.html) chapter of the Reticulum Manual. For software and projects recognized by the Reticulum community, see the [Programs Using Reticulum](https://reticulum.network/manual/software.html) chapter.
+>
+> Do **not** use these "projects", they are a hazard to the entire ecosystem we have been carefully building over the last ten years.
+
 LXST is a simple and flexible real-time streaming format and delivery protocol that allows a wide variety of implementations, while using as little bandwidth as possible. It is built on top of [Reticulum](https://reticulum.network) and offers zero-conf stream routing, end-to-end encryption and Forward Secrecy, and can be transported over any kind of medium that Reticulum supports.
 
 - Cross-platform, works on Linux, Android, Windows and Mac
@@ -30,6 +41,15 @@ LXST is a simple and flexible real-time streaming format and delivery protocol t
 - Has in-band signalling support for call signalling, communications, metadata embedding, media and stream management
 - Uses a fully staged signal pipelining, allowing arbitrary stream routing
 - Provides built-in signal mixing support for any number of channels
+
+User-facing clients built on LXST include:
+
+- [Sideband](https://unsigned.io/sideband)
+- [MeshChatX](https://meshchatx.com/)
+- [Partyline](https://github.com/RFnexus/partyline)
+- [Columba](https://github.com/torlando-tech/columba)
+- [rnphone](https://reticulum.network/manual/software.html#reticulum-network-telephone)
+- [LXST Phone](https://github.com/kc1awv/lxst_phone)
 
 ## Transport Encryption
 
