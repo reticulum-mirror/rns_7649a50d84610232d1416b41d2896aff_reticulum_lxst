@@ -70,8 +70,8 @@ setuptools.setup(
             'rnphone=LXST.Utilities.rnphone:main',
         ]
     },
-    install_requires=["rns>=1.5.3",
-                      "lxmf>=1.1.1",
+    install_requires=["rns>=1.5.5",
+                      "lxmf>=1.2.0",
                       "numpy>=2.3.4",
                       "pycodec2>=4.1.0",
                       "audioop-lts>=0.2.1;python_version>='3.13'",
