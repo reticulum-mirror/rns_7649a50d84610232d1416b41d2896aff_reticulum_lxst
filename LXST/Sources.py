@@ -175,6 +175,7 @@ class Loopback(LocalSource, LocalSink):
 class LineSource(LocalSource):
     MAX_FRAMES       = 128
     DEFAULT_FRAME_MS = 80
+    SIGNAL_FAIL_REINIT_THRESHOLD = 1.5
 
     @staticmethod
     def linear_gain(gain_db): return 10**(gain_db/10)
@@ -198,6 +199,11 @@ class LineSource(LocalSource):
         self.__skip           = skip
         self.__gain           = self.linear_gain(self.gain)
         self.__target_gain    = self.__gain
+
+        self.__check_signal   = RNS.vendor.platformutils.is_android()
+        self.__signal_failed  = None
+        self.__signal_ok      = False
+        self.__must_reinit    = False
 
         if filters != None:
             if type(filters) == list: self.filters = filters
@@ -260,6 +266,22 @@ class LineSource(LocalSource):
                 skip_completed = True if self.__skip <= 0.0 else False
                 while self.should_run:
                     frame_samples = recorder.record(numframes=self.samples_per_frame)
+
+                    if self.__check_signal and not self.__signal_ok:
+                        if np.all(frame_samples == 0):
+                            if not self.__signal_failed: self.__signal_failed = time.time()
+                        else:
+                            self.__signal_ok = True
+                            RNS.log(f"Input signal detected on {self}", RNS.LOG_DEBUG)
+
+                        if not self.__signal_ok and self.__signal_failed:
+                            fail_duration = time.time()-self.__signal_failed
+                            RNS.log(f"No signal for {RNS.prettyshorttime(fail_duration)} on {self}", RNS.LOG_DEBUG)
+                            if fail_duration > self.SIGNAL_FAIL_REINIT_THRESHOLD:
+                                RNS.log(f"Scheduling re-init on {self}", RNS.LOG_DEBUG)
+                                self.__must_reinit = True
+                                self.stop()
+
                     if not skip_completed:
                         if time.time()-started > self.__skip:
                             skip_completed = True
@@ -281,6 +303,12 @@ class LineSource(LocalSource):
                             if self.__gain >= self.__target_gain:
                                 self.__gain = self.__target_gain
                                 ease_in_completed = True
+
+        if self.__must_reinit:
+            self.__must_reinit   = False
+            self.__signal_ok     = False
+            self.__signal_failed = None
+            self.start()
 
 
 class OpusFileSource(LocalSource):
