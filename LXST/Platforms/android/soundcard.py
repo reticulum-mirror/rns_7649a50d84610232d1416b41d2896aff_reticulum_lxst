@@ -420,6 +420,7 @@ class _Stream:
 
             self.AudioManager        = activity.getSystemService(autoclass("android.media.AudioManager"))
             self.AudioTrack          = autoclass("android.media.AudioTrack")
+            self.AudioRecord         = autoclass("android.media.AudioRecord")
             self.AudioFormat         = autoclass("android.media.AudioFormat")
             self.AudioDeviceInfo     = autoclass("android.media.AudioDeviceInfo")
 
@@ -559,7 +560,7 @@ class _Stream:
             else: raise ValueError(f"Unsupported channel count {channels} on Android audio backend")
 
             self.min_buffer_playback  = self.AudioTrack.getMinBufferSize(self._samplerate, self.audio_format_out, self.audio_encoding);
-            self.min_buffer_recording = self.AudioTrack.getMinBufferSize(self._samplerate, self.audio_format_in, self.audio_encoding);
+            self.min_buffer_recording = self.AudioRecord.getMinBufferSize(self._samplerate, self.audio_format_in, self.audio_encoding);
             self.bytes_per_sample = (self.bit_depth//8)*self.channels
 
             self._samplerate = int(self.AudioManager.getProperty(self.AudioManager.PROPERTY_OUTPUT_SAMPLE_RATE))
@@ -700,6 +701,11 @@ class _Player(_Stream):
         while data.nbytes > 0:
             samples_bytes     = data.ravel().tobytes()
             written_bytes     = self.audio_track.write(samples_bytes, 0, len(samples_bytes), self._write_mode)
+
+            if written_bytes < 0:
+                RNS.log(f"{self} frame write error: {written_bytes}", RNS.LOG_DEBUG) if RNS.sl(RNS.LOG_DEBUG) else None
+                return
+
             written_samples   = written_bytes//self.bytes_per_sample
 
             if self._low_latency_activated:
@@ -715,6 +721,9 @@ class _Player(_Stream):
                         written_samples = remaining_frame_samples
                         # TODO: Remove debug
                         # RNS.log(f"Buffer overrun. Target buffer samples {self._target_buffer_samples}. Needed to write {remaining_frame_samples} samples / {len(samples_bytes)} bytes. Discarding {written_samples} input samples.")
+                    else: time.sleep(0.001) # Yield thread, buffer full inside overrun lock window
+
+            if written_bytes == 0 and not self._low_latency_activated: time.sleep(0.001) # Yield thread, buffer full
 
             data = data[written_samples:]
 
@@ -733,7 +742,6 @@ class _Player(_Stream):
 class _Recorder(_Stream):
     def __init__(self, *args, **kwargs):
         super(_Recorder, self).__init__(*args, **kwargs)
-        self.AudioRecord = autoclass("android.media.AudioRecord")
         self._pending_chunk = numpy.zeros((0, ), dtype='float32')
 
     def _connect_stream(self):
@@ -761,6 +769,8 @@ class _Recorder(_Stream):
 
             if   bytes_read == self.audio_record.ERROR_INVALID_OPERATION: RNS.log(f"Invalid operation error from JNI on {self}", RNS.LOG_ERROR)
             elif bytes_read == self.audio_record.ERROR_BAD_VALUE:         RNS.log(f"Bad value error from JNI on {self}", RNS.LOG_ERROR)
+            elif bytes_read <  0:                                         RNS.log(f"Audio read error ({bytes_read}) on {self}", RNS.LOG_ERROR)
+            elif bytes_read == 0:                                         return numpy.zeros((0, ), dtype="float32")
             else:
                 recorded_samples = numpy.frombuffer(audio_data[:bytes_read], dtype="int16")/self.TYPE_MAP_FACTOR
                 return recorded_samples.astype("float32")
@@ -781,7 +791,13 @@ class _Recorder(_Stream):
                 return numpy.reshape(keep, [-1, self.channels])
             
             else:
+                timeout = time.time()+(numframes/self._samplerate)*8
                 while captured_frames < numframes:
+                    if time.time() > timeout:
+                        RNS.log(f"{self} capture timed out at {captured_frames} out of {numframes} frames, emitting silence", RNS.LOG_WARNING)
+                        self._pending_chunk = numpy.zeros((0, ), dtype="float32")
+                        return numpy.zeros((int(numframes), self.channels), dtype="float32")
+
                     try:
                         m_frames = numframes - captured_frames
                         m_bytes = m_frames * self.bytes_per_sample
@@ -793,7 +809,7 @@ class _Recorder(_Stream):
                             wait_factor=0.65
                             m_frames = numframes - captured_frames
                             st = (m_frames / self._samplerate) * wait_factor
-                            # RNS.log(f"Missing {m_frames} samples, sleeping for {RNS.prettyshorttime(st)}") # TODO: Remove
+                            # RNS.log(f"Missing {m_frames}/{numframes} samples, sleeping for {RNS.prettyshorttime(st)}") # TODO: Remove
                             time.sleep(st)
 
                     except Exception as e:
