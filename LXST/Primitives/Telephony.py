@@ -172,6 +172,7 @@ class Telephone(SignallingReceiver):
 
     def __init__(self, identity, ring_time=RING_TIME, wait_time=WAIT_TIME, auto_answer=None, allowed=ALLOW_ALL, receive_gain=0.0, transmit_gain=0.0):
         super().__init__()
+        RNS.Reticulum.get_instance().wants_destination_type(f"{APP_NAME}.{PRIMITIVE_NAME}")
         self.identity = identity
         self.destination = RNS.Destination(self.identity, RNS.Destination.IN, RNS.Destination.SINGLE, APP_NAME, PRIMITIVE_NAME)
         self.destination.set_proof_strategy(RNS.Destination.PROVE_NONE)

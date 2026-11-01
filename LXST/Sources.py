@@ -265,7 +265,9 @@ class LineSource(LocalSource):
                 ease_in_completed = True if self.ease_in <= 0.0 else False
                 skip_completed = True if self.__skip <= 0.0 else False
                 while self.should_run:
+                    # st = time.perf_counter() # TODO: Remove debug
                     frame_samples = recorder.record(numframes=self.samples_per_frame)
+                    # rt = time.perf_counter()-st # TODO: Remove debug
 
                     if self.__check_signal and not self.__signal_ok:
                         if np.all(frame_samples == 0):
@@ -287,15 +289,21 @@ class LineSource(LocalSource):
                             skip_completed = True
                             started = time.time()
                     else:
+                        # ft = 0 # TODO: Remove debug
                         if self.filters != None:
+                            # st = time.perf_counter() # TODO: Remove debug
                             for f in self.filters: frame_samples = f.handle_frame(frame_samples, self.samplerate)
+                            # ft = time.perf_counter()-st # TODO: Remove debug
                         if self.__gain != 1.0: frame_samples *= self.__gain
                         if self.codec:
                             if self.sink and self.sink.can_receive(from_source=self):
                                 try:
+                                    # st = time.perf_counter() # TODO: Remove debug
                                     frame = self.codec.encode(frame_samples)
                                     self.sink.handle_frame(frame, self)
+                                    # et = time.perf_counter()-st # TODO: Remove debug
                                 except Exception as e: RNS.log(f"Encode error on {self}: {e}", RNS.LOG_DEBUG) if RNS.sl(RNS.LOG_DEBUG) else None
+                                # RNS.log(f"REC/FLT/SNK: {RNS.prettyshorttime(rt)} / {RNS.prettyshorttime(ft)}, / {RNS.prettyshorttime(et)}", RNS.LOG_DEBUG) # TODO: Remove debug
 
                         if not ease_in_completed:
                             d = time.time()-started
