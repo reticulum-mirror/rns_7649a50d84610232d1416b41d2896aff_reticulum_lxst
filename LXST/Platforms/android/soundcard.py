@@ -805,9 +805,7 @@ class _Recorder(_Stream):
 
     def _read_legacy(self, read_bytes, read_mode):
         audio_data = bytearray(int(read_bytes))
-        st = time.perf_counter()
         bytes_read = self.audio_record.read(audio_data, 0, read_bytes, read_mode)
-        dt = time.perf_counter()-st; RNS.log(f"R {bytes_read} {RNS.prettyshorttime(dt, compact=True, tight=True)}")
 
         if   bytes_read == self.audio_record.ERROR_INVALID_OPERATION: RNS.log(f"Invalid operation error from JNI on {self}", RNS.LOG_ERROR)
         elif bytes_read == self.audio_record.ERROR_BAD_VALUE:         RNS.log(f"Bad value error from JNI on {self}", RNS.LOG_ERROR)
