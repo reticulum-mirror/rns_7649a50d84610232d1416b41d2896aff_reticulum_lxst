@@ -740,9 +740,17 @@ class _Player(_Stream):
                 # RNS.log(f"{delta} underruns on {self}")
 
 class _Recorder(_Stream):
+    READ_MODE_FAST   = "fast"
+    READ_MODE_LEGACY = "legacy"
+    READ_MODE_FAUX   = "faux"
+    READ_MODE        = READ_MODE_FAST
+    DBG_READ_PACING  = 0.0
+
     def __init__(self, *args, **kwargs):
         super(_Recorder, self).__init__(*args, **kwargs)
-        self._pending_chunk = numpy.zeros((0, ), dtype='float32')
+        self._pending_chunk  = numpy.zeros((0, ), dtype='float32')
+        self._helper_service = None
+        self._helper_ok      = False
 
     def _connect_stream(self):
         try:
@@ -754,39 +762,87 @@ class _Recorder(_Stream):
             buffer_target_bytes   = buffer_target_samples*self.bytes_per_sample
             # RNS.log(f"hz={self._samplerate}, Bps={self.bytes_per_sample}, bd={self.bit_depth}, ch={self.channels}, mbr={self.min_buffer_recording}")
             # RNS.log(f"ms={buffer_target_ms}, smpls={buffer_target_samples}, bytes={buffer_target_bytes}")
-            if buffer_target_bytes < self.min_buffer_recording: buffer_target_bytes = min_buffer_recording
+            if buffer_target_bytes < self.min_buffer_recording: buffer_target_bytes = self.min_buffer_recording
             self.audio_record = self.AudioRecord(AudioSource.VOICE_COMMUNICATION, self._samplerate, self.audio_format_in, self.audio_encoding, buffer_target_bytes)
             self.audio_record.startRecording()
+            if _Recorder.READ_MODE == _Recorder.READ_MODE_FAST: self.__check_read_helper()
 
         except Exception as e:
             RNS.log(f"Error while connecting input audio stream via JNI: {e}", RNS.LOG_ERROR)
             RNS.trace_exception(e)
 
+    def __check_read_helper(self):
+        try:
+            service = autoclass("org.kivy.android.PythonService").mService
+            if service == None: raise AttributeError("No PythonService instance available")
+            probe = service.audioRecordRead(self.audio_record, 0, self.audio_record.READ_NON_BLOCKING)
+            if probe == None: raise AttributeError("audioRecordRead returned None for probe")
+            if len(probe) != 0: raise ValueError("audioRecordRead probe returned unexpected data")
+            self._helper_service = service
+            self._helper_ok      = True
+            RNS.log(f"{self} using audio read helper", RNS.LOG_DEBUG)
+            return
+
+        except Exception as e: RNS.log(f"{self} audio read helper not available, using legacy read path: {e}", RNS.LOG_DEBUG)
+
+        self._helper_service = None
+        self._helper_ok      = False
+
+    def _read_fast(self, read_bytes, read_mode):
+        result = self._helper_service.audioRecordRead(self.audio_record, int(read_bytes), int(read_mode))
+
+        if result == None:
+            bytes_read = -1
+            RNS.log(f"{self} audio read error in helper", RNS.LOG_ERROR)
+            return None
+
+        bytes_read = len(result)
+
+        if bytes_read == 0: return numpy.zeros((0, ), dtype="float32")
+        else:
+            recorded_samples = numpy.frombuffer(result.tostring(), dtype="int16")/self.TYPE_MAP_FACTOR
+            return recorded_samples.astype("float32")
+
+    def _read_legacy(self, read_bytes, read_mode):
+        audio_data = bytearray(int(read_bytes))
+        st = time.perf_counter()
+        bytes_read = self.audio_record.read(audio_data, 0, read_bytes, read_mode)
+        dt = time.perf_counter()-st; RNS.log(f"R {bytes_read} {RNS.prettyshorttime(dt, compact=True, tight=True)}")
+
+        if   bytes_read == self.audio_record.ERROR_INVALID_OPERATION: RNS.log(f"Invalid operation error from JNI on {self}", RNS.LOG_ERROR)
+        elif bytes_read == self.audio_record.ERROR_BAD_VALUE:         RNS.log(f"Bad value error from JNI on {self}", RNS.LOG_ERROR)
+        elif bytes_read <  0:                                         RNS.log(f"Audio read error ({bytes_read}) on {self}", RNS.LOG_ERROR)
+        elif bytes_read == 0:                                         return numpy.zeros((0, ), dtype="float32")
+        else:
+            recorded_samples = numpy.frombuffer(audio_data[:bytes_read], dtype="int16")/self.TYPE_MAP_FACTOR
+            return recorded_samples.astype("float32")
+
+    # Debug-only faux-read shim
+    def _read_faux(self, read_bytes, read_mode):
+        bytes_read = int(read_bytes)
+        audio_data = bytes(bytes_read)
+        time.sleep(bytes_read/self.bytes_per_sample/self._samplerate)
+        return numpy.zeros((bytes_read//2, ), dtype="float32")
+
     def _record_chunk(self, read_bytes=None):
         try:
             if read_bytes:
-                read_mode  = self.audio_record.READ_BLOCKING
+                read_mode = self.audio_record.READ_BLOCKING
             else:
                 read_bytes = self.min_buffer_recording
                 read_mode  = self.audio_record.READ_NON_BLOCKING
 
-            audio_data = bytearray(int(read_bytes))
-            bytes_read = self.audio_record.read(audio_data, 0, read_bytes, read_mode)
+            if   _Recorder.READ_MODE == _Recorder.READ_MODE_FAUX:                     chunk = self._read_faux(read_bytes, read_mode)
+            elif _Recorder.READ_MODE == _Recorder.READ_MODE_FAST and self._helper_ok: chunk = self._read_fast(read_bytes, read_mode)
+            else:                                                                     chunk = self._read_legacy(read_bytes, read_mode)
 
-            if   bytes_read == self.audio_record.ERROR_INVALID_OPERATION: RNS.log(f"Invalid operation error from JNI on {self}", RNS.LOG_ERROR)
-            elif bytes_read == self.audio_record.ERROR_BAD_VALUE:         RNS.log(f"Bad value error from JNI on {self}", RNS.LOG_ERROR)
-            elif bytes_read <  0:                                         RNS.log(f"Audio read error ({bytes_read}) on {self}", RNS.LOG_ERROR)
-            elif bytes_read == 0:                                         return numpy.zeros((0, ), dtype="float32")
-            else:
-                # RNS.log(f"Read {bytes_read} B")
-                recorded_samples = numpy.frombuffer(audio_data[:bytes_read], dtype="int16")/self.TYPE_MAP_FACTOR
-                return recorded_samples.astype("float32")
+            if _Recorder.DBG_READ_PACING > 0 and _Recorder.READ_MODE != _Recorder.READ_MODE_FAUX: time.sleep(_Recorder.DBG_READ_PACING)
+
+            return chunk
 
         except Exception as e:
             RNS.log(f"Error while reading audio chunk: {e}", RNS.LOG_ERROR)
-            RNS.trace_exception(e)
             return None
-
 
     def record(self, numframes=None):
         if numframes is None: return numpy.reshape(numpy.concatenate([self.flush().ravel(), self._record_chunk()]), [-1, self.channels])
