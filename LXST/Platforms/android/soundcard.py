@@ -559,8 +559,8 @@ class _Stream:
 
             else: raise ValueError(f"Unsupported channel count {channels} on Android audio backend")
 
-            self.min_buffer_playback  = self.AudioTrack.getMinBufferSize(self._samplerate, self.audio_format_out, self.audio_encoding);
-            self.min_buffer_recording = self.AudioRecord.getMinBufferSize(self._samplerate, self.audio_format_in, self.audio_encoding);
+            self.min_buffer_playback  = self.AudioTrack.getMinBufferSize(self._samplerate, self.audio_format_out, self.audio_encoding)
+            self.min_buffer_recording = self.AudioRecord.getMinBufferSize(self._samplerate, self.audio_format_in, self.audio_encoding)
             self.bytes_per_sample = (self.bit_depth//8)*self.channels
 
             self._samplerate = int(self.AudioManager.getProperty(self.AudioManager.PROPERTY_OUTPUT_SAMPLE_RATE))
@@ -747,8 +747,15 @@ class _Recorder(_Stream):
     def _connect_stream(self):
         try:
             AudioSource = autoclass("android.media.MediaRecorder$AudioSource")
+            self.min_buffer_recording = self.AudioRecord.getMinBufferSize(self._samplerate, self.audio_format_in, self.audio_encoding)
 
-            self.audio_record = self.AudioRecord(AudioSource.VOICE_COMMUNICATION, self._samplerate, self.audio_format_in, self.audio_encoding, self.min_buffer_recording)
+            buffer_target_ms      = 200
+            buffer_target_samples = int((self._samplerate/1000)*buffer_target_ms)
+            buffer_target_bytes   = buffer_target_samples*self.bytes_per_sample
+            # RNS.log(f"hz={self._samplerate}, Bps={self.bytes_per_sample}, bd={self.bit_depth}, ch={self.channels}, mbr={self.min_buffer_recording}")
+            # RNS.log(f"ms={buffer_target_ms}, smpls={buffer_target_samples}, bytes={buffer_target_bytes}")
+            if buffer_target_bytes < self.min_buffer_recording: buffer_target_bytes = min_buffer_recording
+            self.audio_record = self.AudioRecord(AudioSource.VOICE_COMMUNICATION, self._samplerate, self.audio_format_in, self.audio_encoding, buffer_target_bytes)
             self.audio_record.startRecording()
 
         except Exception as e:
@@ -759,12 +766,11 @@ class _Recorder(_Stream):
         try:
             if read_bytes:
                 read_mode  = self.audio_record.READ_BLOCKING
-                if read_bytes > self.min_buffer_recording: read_bytes = self.min_buffer_recording
             else:
                 read_bytes = self.min_buffer_recording
                 read_mode  = self.audio_record.READ_NON_BLOCKING
 
-            audio_data = bytearray(self.min_buffer_recording)
+            audio_data = bytearray(int(read_bytes))
             bytes_read = self.audio_record.read(audio_data, 0, read_bytes, read_mode)
 
             if   bytes_read == self.audio_record.ERROR_INVALID_OPERATION: RNS.log(f"Invalid operation error from JNI on {self}", RNS.LOG_ERROR)
@@ -772,6 +778,7 @@ class _Recorder(_Stream):
             elif bytes_read <  0:                                         RNS.log(f"Audio read error ({bytes_read}) on {self}", RNS.LOG_ERROR)
             elif bytes_read == 0:                                         return numpy.zeros((0, ), dtype="float32")
             else:
+                # RNS.log(f"Read {bytes_read} B")
                 recorded_samples = numpy.frombuffer(audio_data[:bytes_read], dtype="int16")/self.TYPE_MAP_FACTOR
                 return recorded_samples.astype("float32")
 
