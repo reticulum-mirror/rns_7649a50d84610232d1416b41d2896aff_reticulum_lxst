@@ -651,7 +651,9 @@ class _Player(_Stream):
                 aa_builder.setContentType(AudioAttributes.CONTENT_TYPE_UNKNOWN)
                 self.performance_mode = AudioTrack.PERFORMANCE_MODE_NONE
 
-            aa_builder.setAllowedCapturePolicy(AudioAttributes.ALLOW_CAPTURE_BY_NONE)
+            if _audio.android_api_version >= 29:
+                aa_builder.setAllowedCapturePolicy(AudioAttributes.ALLOW_CAPTURE_BY_NONE)
+
             self.audio_attributes = aa_builder.build()
 
             af_builder = AudioFormatBuilder()
