@@ -37,6 +37,7 @@ User-facing clients built on LXST include:
  • `_`!`[MeshChatX`https://meshchatx.com/]`!`_
  • `_`!`[Partyline`https://github.com/RFnexus/partyline]`!`_
  • `_`!`[Columba`https://github.com/torlando-tech/columba]`!`_
+ • `_`!`[Ratspeak`https://github.com/ratspeak/]`!`_
  • `_`!`[rnphone`https://reticulum.network/manual/software.html]`!`_
  • `_`!`[LXST Phone`https://github.com/kc1awv/lxst_phone]`!`_
 
