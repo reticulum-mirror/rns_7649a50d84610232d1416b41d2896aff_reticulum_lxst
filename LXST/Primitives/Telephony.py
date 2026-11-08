@@ -627,6 +627,9 @@ class Telephone(SignallingReceiver):
                     self.__reconfigure_transmit_pipeline()
                     self.receive_mixer.set_source_max_frames(self.active_call.audio_source, self.target_buffer_frames)
                     self.__update_output_buffer_targets()
+                    if self.low_latency_output:
+                        self.audio_output._hw_frame_time = self.target_frame_time_ms/1000.0
+                        self.audio_output.enable_low_latency()
 
     def __select_call_profile(self, profile=None):
         if profile == None: profile = Profiles.DEFAULT_PROFILE
@@ -672,7 +675,7 @@ class Telephone(SignallingReceiver):
     def __prepare_dialling_pipelines(self):
         self.__select_call_profile(self.active_call.profile)
         self.__select_call_mode(self.active_call.call_mode)
-        if self.audio_output     == None: self.audio_output = LineSink(preferred_device=self.speaker_device) if not self.__loudspeaker_on else LineSink(preferred_device=self.loudspeaker_device)
+        if self.audio_output     == None: self.audio_output = LineSink(preferred_device=self.speaker_device, low_latency=self.low_latency_output) if not self.__loudspeaker_on else LineSink(preferred_device=self.loudspeaker_device, low_latency=self.low_latency_output)
         if self.receive_mixer    == None: self.receive_mixer = Mixer(target_frame_ms=self.target_frame_time_ms, gain=self.receive_gain)
         if self.dial_tone        == None: self.dial_tone = ToneSource(frequency=self.dial_tone_frequency, gain=0.0, ease_time_ms=self.dial_tone_ease_ms, target_frame_ms=self.target_frame_time_ms, codec=Null(), sink=self.receive_mixer)
         if self.receive_pipeline == None: self.receive_pipeline = Pipeline(source=self.receive_mixer, codec=Null(), sink=self.audio_output)
@@ -683,7 +686,7 @@ class Telephone(SignallingReceiver):
             with self.pipeline_lock:
                 previous_output = self.audio_output
                 previous_pipeline = self.receive_pipeline
-                self.audio_output = LineSink(preferred_device=self.speaker_device) if not self.__loudspeaker_on else LineSink(preferred_device=self.loudspeaker_device)
+                self.audio_output = LineSink(preferred_device=self.speaker_device, low_latency=self.low_latency_output) if not self.__loudspeaker_on else LineSink(preferred_device=self.loudspeaker_device, low_latency=self.low_latency_output)
                 self.receive_pipeline = Pipeline(source=self.receive_mixer, codec=Null(), sink=self.audio_output)
                 self.receive_pipeline.start()
                 previous_pipeline.stop()

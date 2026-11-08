@@ -358,9 +358,9 @@ class _Speaker(_SoundCard):
     def __repr__(self):
         return '<Speaker {} ({} channels)>'.format(self.name, self.channels)
 
-    def player(self, samplerate, channels=None, blocksize=None, low_latency=None):
+    def player(self, samplerate, channels=None, blocksize=None, low_latency=None, frame_time=None):
         if channels is None: channels = self.channels
-        return _Player(self._id, samplerate, channels, blocksize, low_latency)
+        return _Player(self._id, samplerate, channels, blocksize, low_latency=low_latency, frame_time=frame_time)
 
     def play(self, data, samplerate, channels=None, blocksize=None):
         if channels is None: channels = self.channels
@@ -390,12 +390,16 @@ class _Microphone(_SoundCard):
 
 class _Stream:
     TYPE_MAP_FACTOR = numpy.iinfo("int16").max
+    LOW_LATENCY_FRAME_MARGIN = 3
+    LOW_LATENCY_MAX_FRAME_MS = 400
+    LOW_LATENCY_MS_CAP       = 1200
 
-    def __init__(self, id, samplerate, channels, blocksize=None, name="outputstream", low_latency=None):
+    def __init__(self, id, samplerate, channels, blocksize=None, name="outputstream", low_latency=None, frame_time=None):
         self._id                 = id
         self._samplerate         = samplerate
         self._name               = name
         self._blocksize          = blocksize
+        self._ext_frame_time_ms  = None
         self.channels            = channels
         self.bit_depth           = 16
         self.audio_track         = None
@@ -403,6 +407,11 @@ class _Stream:
         self.audio_mode          = "normal"
         self.enabled_comms       = False
         self.low_latency_allowed = low_latency
+        self._hw_buffer_frames   = None
+
+        if frame_time: self._ext_frame_time_ms = round(frame_time*1000)
+        if self.low_latency_allowed and self._ext_frame_time_ms and self._ext_frame_time_ms > self.LOW_LATENCY_MAX_FRAME_MS:
+            self.low_latency_allowed = False
 
         try:
             Context  = autoclass('android.content.Context')
@@ -654,6 +663,13 @@ class _Player(_Stream):
             if _audio.android_api_version >= 29:
                 aa_builder.setAllowedCapturePolicy(AudioAttributes.ALLOW_CAPTURE_BY_NONE)
 
+            if not self._low_latency: hw_buffer_bytes = self.min_buffer_playback
+            else:
+                init_target_buffer_ms = self.LOW_LATENCY_MAX_FRAME_MS*self.LOW_LATENCY_FRAME_MARGIN
+                if init_target_buffer_ms > self.LOW_LATENCY_MS_CAP: init_target_buffer_ms = self.LOW_LATENCY_MS_CAP
+                hw_buffer_bytes = int((self.bytes_per_sample*self._samplerate)*(init_target_buffer_ms/1000.0))
+                if hw_buffer_bytes < self.min_buffer_playback: hw_buffer_bytes = self.min_buffer_playback
+
             self.audio_attributes = aa_builder.build()
 
             af_builder = AudioFormatBuilder()
@@ -665,7 +681,7 @@ class _Player(_Stream):
             at_builder = AudioTrackBuilder()
             at_builder.setAudioAttributes(self.audio_attributes)
             at_builder.setAudioFormat(self.audio_format)
-            at_builder.setBufferSizeInBytes(self.min_buffer_playback)
+            at_builder.setBufferSizeInBytes(hw_buffer_bytes)
             at_builder.setPerformanceMode(self.performance_mode)
             self.audio_track = at_builder.build()
             
@@ -675,18 +691,26 @@ class _Player(_Stream):
             RNS.log(f"Error while connecting output audio stream via JNI: {e}", RNS.LOG_ERROR)
             RNS.trace_exception(e)
 
-    def enable_low_latency(self):
+    def _set_hw_buffer_size(self, samples):
+        self._target_buffer_samples = samples
+        self._hw_buffer_frames = self.audio_track.setBufferSizeInFrames(self._target_buffer_samples)
+        # RNS.log(f"Hardware buffer set to: {self._hw_buffer_frames}") # TODO: Remove debug
+
+    def enable_low_latency(self, frame_time=None):
+        # RNS.log(f"Enabling low latency on {self}") # TODO: Remove debug
+        if not self.low_latency_allowed: return
+        if frame_time: self._ext_frame_time_ms = round(frame_time*1000)
         self.low_latency_allowed = True
         self._low_latency = True
         self._low_latency_setup()
-        if self.audio_track and self._play_engaged:
-            self.audio_track.setBufferSizeInFrames(self._target_buffer_samples)
 
     def _low_latency_setup(self):
         AudioTrack = autoclass("android.media.AudioTrack")
         self._write_mode = AudioTrack.WRITE_NON_BLOCKING
+        if self._ext_frame_time_ms: self._target_buffer_ms = int(self._ext_frame_time_ms)*self.LOW_LATENCY_FRAME_MARGIN
         self._target_buffer_samples = int((self._target_buffer_ms/1000.0)/(1.0/self._samplerate))
-        self.audio_track.setBufferSizeInFrames(self._target_buffer_samples)
+        self._set_hw_buffer_size(self._target_buffer_samples)
+        # RNS.log(f"Output buffer set to {self._target_buffer_samples} samples / {self._target_buffer_ms}ms") # TODO: Remove debug
         self._low_latency_activated = True
 
     def play(self, frame):
@@ -732,14 +756,15 @@ class _Player(_Stream):
             if not self._play_engaged:
                 self.audio_track.play()
                 self._play_engaged = True
-                if self._target_buffer_samples: self.audio_track.setBufferSizeInFrames(self._target_buffer_samples)
+                if self._target_buffer_samples: self._set_hw_buffer_size(self._target_buffer_samples)
 
-            underruns = self.audio_track.getUnderrunCount()
-            if underruns > self._last_underruns:
-                delta = underruns-self._last_underruns
-                self._last_underruns = underruns
-                # TODO: Remove debug
-                # RNS.log(f"{delta} underruns on {self}")
+            # TODO: Remove debug
+            # underruns = self.audio_track.getUnderrunCount()
+            # if underruns > self._last_underruns:
+            #     delta = underruns-self._last_underruns
+            #     self._last_underruns = underruns
+            #     # TODO: Remove debug
+            #     RNS.log(f"{delta} underruns on {self}")
 
 class _Recorder(_Stream):
     READ_MODE_FAST   = "fast"

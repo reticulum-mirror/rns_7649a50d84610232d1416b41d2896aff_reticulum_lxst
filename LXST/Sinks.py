@@ -27,7 +27,7 @@ class LinuxBackend():
 
     def flush(self): self.device.flush()
 
-    def get_player(self, samples_per_frame=None, low_latency=None):
+    def get_player(self, samples_per_frame=None, low_latency=None, frame_time=None):
         return self.device.player(samplerate=self.samplerate, blocksize=samples_per_frame)
 
     def release_player(self): pass
@@ -50,8 +50,8 @@ class AndroidBackend():
 
     def flush(self): self.device.flush()
 
-    def get_player(self, samples_per_frame=None, low_latency=None):
-        return self.device.player(samplerate=self.samplerate, blocksize=samples_per_frame, low_latency=low_latency)
+    def get_player(self, samples_per_frame=None, low_latency=None, frame_time=None):
+        return self.device.player(samplerate=self.samplerate, blocksize=samples_per_frame, low_latency=low_latency, frame_time=frame_time)
 
     def release_player(self): pass
 
@@ -73,7 +73,7 @@ class DarwinBackend():
     
     def flush(self): self.device.flush()
 
-    def get_player(self, samples_per_frame=None, low_latency=None):
+    def get_player(self, samples_per_frame=None, low_latency=None, frame_time=None):
         return self.device.player(samplerate=self.samplerate, blocksize=samples_per_frame)
 
     def release_player(self): pass
@@ -96,7 +96,7 @@ class WindowsBackend():
     
     def flush(self): self.device.flush()
 
-    def get_player(self, samples_per_frame=None, low_latency=None):
+    def get_player(self, samples_per_frame=None, low_latency=None, frame_time=None):
         return self.device.player(samplerate=self.samplerate, blocksize=samples_per_frame)
 
     def release_player(self): pass
@@ -158,6 +158,7 @@ class LineSink(LocalSink):
         self.max_latency          = 0
         
         self.__wants_low_latency  = False
+        self._hw_frame_time       = None
 
     def can_receive(self, from_source=None):
         with self.insert_lock:
@@ -201,7 +202,8 @@ class LineSink(LocalSink):
             if not RNS.vendor.platformutils.is_darwin(): backend_samples_per_frame = self.samples_per_frame
             else: backend_samples_per_frame = None
 
-            with self.backend.get_player(samples_per_frame=backend_samples_per_frame, low_latency=self.low_latency) as player:
+            hw_frame_time = self._hw_frame_time if self._hw_frame_time else self.frame_time
+            with self.backend.get_player(samples_per_frame=backend_samples_per_frame, low_latency=self.low_latency, frame_time=hw_frame_time) as player:
                 while self.should_run:
                     frames_ready = len(self.frame_deque)
                     if frames_ready:
@@ -237,7 +239,8 @@ class LineSink(LocalSink):
                         self.__wants_low_latency = False
                         if hasattr(player, "enable_low_latency") and callable(player.enable_low_latency):
                             RNS.log(f"Run-time enabling low-latency mode on {self}", RNS.LOG_DEBUG)
-                            player.enable_low_latency()
+                            hw_frame_time = self._hw_frame_time if self._hw_frame_time else self.frame_time
+                            player.enable_low_latency(frame_time=hw_frame_time)
                         else:
                             RNS.log(f"Could not run-time enable low latency mode on {self}, the operation is not supported by the backend", RNS.LOG_DEBUG)
 
