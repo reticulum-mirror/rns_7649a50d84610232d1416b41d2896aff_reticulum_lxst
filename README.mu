@@ -52,13 +52,13 @@ The LXST project is available under a `BT383838`FdddCC BY-NC-ND 4.0`f`b license.
 
 LXST uses third-party codecs, and where included in source and binary distributions, these are distributed under their respective licenses:
 
- • Parts of `pydub`, under the [MIT License](:/page/blob.mu`g=reticulum|r=lxst|ref=HEAD|path=LXST/Codecs/libs/pydub/LICENSE), Copyright (c) 2011 James Robert.
- • The `_`!`[Ogg License]`:/page/blob.mu`g=reticulum|r=lxst|ref=HEAD|path=LXST/Codecs/libs/pyogg/LICENSE]`!`_
- • The `_`!`[Opus License]`:/page/blob.mu`g=reticulum|r=lxst|ref=HEAD|path=LXST/Codecs/libs/pyogg/LICENSE]`!`_
- • The `_`!`[Opusenc License]`:/page/blob.mu`g=reticulum|r=lxst|ref=HEAD|path=LXST/Codecs/libs/pyogg/LICENSE]`!`_
- • The `_`!`[Opusfile License]`:/page/blob.mu`g=reticulum|r=lxst|ref=HEAD|path=LXST/Codecs/libs/pyogg/LICENSE]`!`_
- • The `_`!`[Vorbis License]`:/page/blob.mu`g=reticulum|r=lxst|ref=HEAD|path=LXST/Codecs/libs/pyogg/LICENSE]`!`_
- • The `_`!`[Flac License]`:/page/blob.mu`g=reticulum|r=lxst|ref=HEAD|path=LXST/Codecs/libs/pyogg/LICENSE]`!`_
+ • Parts of `BT383838`Fdddpydub`f`b, under the `_`!`[MIT License`:/page/blob.mu`g=reticulum|r=lxst|ref=HEAD|path=LXST/Codecs/libs/pydub/LICENSE]`!`_, Copyright (c) 2011 James Robert.
+ • The `_`!`[Ogg License`:/page/blob.mu`g=reticulum|r=lxst|ref=HEAD|path=LXST/Codecs/libs/pyogg/LICENSE]`!`_
+ • The `_`!`[Opus License`:/page/blob.mu`g=reticulum|r=lxst|ref=HEAD|path=LXST/Codecs/libs/pyogg/LICENSE]`!`_
+ • The `_`!`[Opusenc License`:/page/blob.mu`g=reticulum|r=lxst|ref=HEAD|path=LXST/Codecs/libs/pyogg/LICENSE]`!`_
+ • The `_`!`[Opusfile License`:/page/blob.mu`g=reticulum|r=lxst|ref=HEAD|path=LXST/Codecs/libs/pyogg/LICENSE]`!`_
+ • The `_`!`[Vorbis License`:/page/blob.mu`g=reticulum|r=lxst|ref=HEAD|path=LXST/Codecs/libs/pyogg/LICENSE]`!`_
+ • The `_`!`[Flac License`:/page/blob.mu`g=reticulum|r=lxst|ref=HEAD|path=LXST/Codecs/libs/pyogg/LICENSE]`!`_
 
 >>Installation
 
