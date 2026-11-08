@@ -60,6 +60,8 @@ LXST uses third-party codecs, and where included in source and binary distributi
  • The `_`!`[Vorbis License`:/page/blob.mu`g=reticulum|r=lxst|ref=HEAD|path=LXST/Codecs/libs/pyogg/LICENSE]`!`_
  • The `_`!`[Flac License`:/page/blob.mu`g=reticulum|r=lxst|ref=HEAD|path=LXST/Codecs/libs/pyogg/LICENSE]`!`_
 
+Additionally, some parts of the platform abstraction code is released under the BSD 3-Clause license. See the relevant license headers for details.
+
 >>Installation
 
 If you want to try out LXST, you can install it with pip:
