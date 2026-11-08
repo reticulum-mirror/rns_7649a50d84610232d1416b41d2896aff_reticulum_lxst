@@ -61,6 +61,16 @@ This software and its interfaces will change rapidly with ongoing development. C
 
 The LXST project is available under a `CC BY-NC-ND 4.0` license. You can deploy LXST freely for non-commercial, personal and humanitarian purposes. For commercial (including institutionalised educational) licensing, contact me.
 
+LXST uses third-party codecs, and where included in source and binary distributions, these are distributed under their respective licenses:
+
+- Parts of `pydub`, under the [MIT License](./LXST/Codecs/libs/pydub/LICENSE), Copyright (c) 2011 James Robert.
+- The [Ogg License](./LXST/Codecs/libs/pyogg/LICENSE)
+- The [Opus License](./LXST/Codecs/libs/pyogg/LICENSE)
+- The [Opusenc License](./LXST/Codecs/libs/pyogg/LICENSE)
+- The [Opusfile License](./LXST/Codecs/libs/pyogg/LICENSE)
+- The [Vorbis License](./LXST/Codecs/libs/pyogg/LICENSE)
+- The [Flac License](./LXST/Codecs/libs/pyogg/LICENSE)
+
 ## Installation
 
 If you want to try out LXST, you can install it with pip:
